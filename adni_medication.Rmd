@@ -5,6 +5,19 @@ date: "2024-09-03"
 ---
 
 ```{r}
+install.packages("Hmisc")
+# Install ADNIMERGE from the local source file
+install.packages("/Users/viv/Downloads/Data___Database/ADNIMERGE_0.0.1.tar.gz", repos = NULL, type = "source")
+
+reccmeds<-ADNIMERGE::reccmeds
+
+reccmeds%>%
+  filter(RID %in% metformin_rid)
+
+
+```
+
+```{r}
 library(dplyr)
 library(tidyr)
 library(stringr)
@@ -14,14 +27,23 @@ library(tools)
 ```{r}
 medication = read.csv('/Users/viv/Desktop/data science/meds.csv')
 adnimerge = read.csv('/Users/viv/Desktop/data science/adni_merge.csv')
+# medication for backmeds
+med34 = read.csv('/Users/viv/Desktop/data science/meds34.csv')
 ```
 
 ```{r}
+# clean table adnimerge
+cl_adnimerge <- adnimerge%>%
+  janitor::clean_names()
 
-#clean cmmed for letter a
-cl_med_a <-medication%>%
+#clean backmeds
+backmed <- med34%>%
+  janitor::clean_names()
+#clean cmmed
+medication<-medication%>%
   janitor::clean_names()%>%
   #drop empty 22411 rows
+  filter(cmmed != -4)%>%
   mutate(cmmed = ifelse(cmmed == "", NA, cmmed))%>%
   drop_na(cmmed)%>%
   mutate(cmmed = str_to_title(cmmed))%>%
@@ -30,7 +52,13 @@ cl_med_a <-medication%>%
   # Remove single quotes from the strings
   mutate(cmmed = str_replace_all(cmmed, "'", "")) %>%
 
-  mutate(cmmed = str_replace_all(cmmed, "\\[\\|194\\|\\]\\[\\|174\\|\\]", "")) %>%
+  mutate(cmmed = str_replace_all(cmmed, "\\[\\|194\\|\\]\\[\\|174\\|\\]", "")) 
+```  
+
+
+```{r}
+#clean letter a
+cl_med_a<-medication%>%
   mutate(cmmed = case_when(
     str_detect(cmmed, "5% Saline Eye Drops") ~ "5% Saline Eye Drops",
     str_detect(cmmed, "Abs Sr. Plus") ~ "Abc Plus Senior",
@@ -108,7 +136,7 @@ cl_med_b <- cl_med_a %>%
     str_detect(cmmed, "Bethamethasone Valerate") ~ "Betamethasone Valerate",
     str_detect(cmmed, "Bisopril \\(Hctz\\)|Bisopropolol/Hctz") ~ "Bisoprolol Hctz",
     str_detect(cmmed, "Black Cohash") ~ "Black Cohosh",
-    str_detect(cmmed, "Bone Up") ~ "BoneUp",
+    str_detect(cmmed, "Bone Up") ~ "Boneup",
     str_detect(cmmed, "Brimonidine Tartate") ~ "Brimonidine Tartrate",
     str_detect(cmmed, "Buproprion") ~ "Bupropion",
     str_detect(cmmed, "Buproprion Er") ~ "Bupropion Er",
@@ -122,14 +150,49 @@ cl_med_b <- cl_med_a %>%
 ```{r}
 cl_med_c <- cl_med_b %>%
   mutate(cmmed = case_when(
+    str_detect(cmmed,"Ca, Mg, K")~"Ca + Mg + K",
     str_detect(cmmed, regex(
-      "Ca W/ Vitamin D|Calcium & D|Calcium & Vitamin D|Calcium \\+ D|Calcium \\+ Vit D|Calcium \\+ Vit\\. D|Calcium \\+D|Calcium \\+Vit D|Calcium / Vitamin D|Calcium /Vitamin D|Calcium And Vitamin D|Calcium Vit D|Calcium/Vit D|Calcium/Vitamin D|Calcuim \\+ Vitamin D|Calcuim And Vitamin D|Calcuim Plus Vitamin D|Calcuim With Vitamin D", 
+      "Ca W/ Vitamin D|Calcium & D|Calcium & Vitamin D|Calcium \\+ D|Calcium \\+ Vit D|Calcium \\+ Vit\\. D|Calcium \\+D|Calcium \\+Vit D|Calcium / Vitamin D|Calcium And Vitamin D|Calcium Vit D|Calcium/Vit D|Calcium/Vitamin D|Calcuim \\+ Vitamin D|Calcuim And Vitamin D|Calcuim Plus Vitamin D|Calcuim With Vitamin D|Calcium-Vitamin D|Ca/D|Calcium /Vitamin D|Calcium D|Calcium Plus Vit D|Calcium Plus Vitamin D|Calcium Plus D|Calcium W/ Vit D|Calcium W/ Vitamin D|Calcium W/D|Calcium W/Vit D|Calcium W/Vitamin D|Calcium With D|Calcium With Vit D|Calcium With Vit. D|Calcium With Vitamin D|Calcium Wtih Vit D|Calcium\\+D|Calcium\\+Vitamin D|Calicum \\& Vitamin D|Calcium/ Vitamin D|Calcium/D", 
       ignore_case = TRUE)) ~ "Calcium + Vitamin D",
-    str_detect(cmmed, regex("B 100", ignore_case = TRUE)) ~ "B-100",
+    str_detect(cmmed, regex("Calcium \\(500mg\\) \\+ Vitamin D \\(125iu\\)", ignore_case = TRUE)) ~ "Calcium (500 Mg) + Vitamin D3 (125 Iu)",
+    str_detect(cmmed,"Calcium And Magnesium|Cal Mag|Cal Mag T|Cal-Mag|Calcium Mag|Calcium Magnesium|Calcium With Magnesium|Calcium-Magnesium|Calcium\\&Magnesium Suppl.|Calcium/Magnesium|Calcium/Mg")~"Calcium + Magnesium",
+    str_detect(cmmed,"Calcium With Vitamind D And Magnesium")~"Calcium, Magnesium And Vitamin D",
+    str_detect(cmmed,"Calcium/Zing/Magnesium Supplement")~"Calcium, Magnesium, Zinc",
+    str_detect(cmmed,"Calcium Carbonate Vitamin D|Calcium Carbonate W/ Vitamin D|Calcium Carbonate W/Vitamin D|Calcium Carbonate/Vitamin D")~"Calcium Carbonate + Vitamin D",
+    str_detect(cmmed,"Calcium, Magnesium \\& Zinc|Calcium, Zinc, Magnesium")~"Calcium, Magnesium, Zinc",
+    str_detect(cmmed,"Calcium Cit")~"Calcium Citrate",
+    str_detect(cmmed,"Calcium Citrate \\+D|Calcium Citrate Plus D|Calcium Citrate With Vit D|Calcium Citrate With Vitamin D|Calcium Citrate Wvitamin D Nos|Calcium Citrate/Vit D|Calcium Citrate/Vitamin D")~"Calcium Citrate +Vitamin D",
+    str_detect(cmmed,"Calcium Citrate Magnesium|Calcium/Magnesium Citrate")~"Calcium Citrate With Magnesium",
+    str_detect(cmmed,"Calicum")~"Calcium",
     str_detect(cmmed, regex("Calcium 600 - D|Calcium 600 D|Calcium 600 \\+ D|Calcium 600\\+D", ignore_case = TRUE)) ~ "Calcium 600 Plus Vitamin D",
+      str_detect(cmmed,"Caltrate With Vitamin D|Caltrate-D|Caltrate Plus")~"Caltrate D",
+    str_detect(cmmed,"Carbidopalevodopa")~"Carbidopa/Levodopa",
+    str_detect(cmmed,"Cartia Xl")~"Cartia Xt",
+    str_detect(cmmed, "Celexia")~"Celexa",
+    str_detect(cmmed,"Centralvite")~"Central Vite",
+    str_detect(cmmed,"Centrum A To Zinc")~"Centrum A-Z",
+    str_detect(cmmed,"Centravite Sr|Centrum Snior")~"Centrum Senior",
+    str_detect(cmmed,"Centrum-Silver|Centrum Sliver|Centrum Silver 2000")~"Centrum Silver",
+    str_detect(cmmed,"Centrum Silver Mvi|Centrum Silver Multivitamin|Centrum Silver, Multivitamins|Centrum Silver- Mvi")~"Centrum Silver Multi-Vitamin",
+    str_detect(cmmed,"Cephalfrin")~"Cephalexin",
+    str_detect(cmmed,"Cetiricine Hcl|Cetirizine Hcl")~"Cetirizine Hydrochloride",
+    str_detect(cmmed,"Choline Bititrate")~"Choline Bitartrate",
+    str_detect(cmmed,"Chondroiton/Glucosamine|Chondroitin With Glucosamine|Chondroitin Wglucosamine|Chondroitin Glucosamine")~"Chondroitin/Glucosamine",
+    str_detect(cmmed,"Chromium Picolonate")~"Chromium Picolinate",
+    str_detect(cmmed,"Ciproflaxacin Hcl")~"Ciprofloxacin Hcl",
+    str_detect(cmmed,"Citalopran")~"Citalopram",
+    str_detect(cmmed,"Citracal \\+ Vit D|Citracal \\+D|Citracal D\\+|Citrical With D|Citrical\\+Vitamin D")~"Citracal + D",
+    str_detect(cmmed,"Citrocel")~"Citrucel",
+    str_detect(cmmed,"Claratin|Claritan")~"Claritin",
+    str_detect(cmmed,"Climera")~"Climara",
+    str_detect(cmmed,"Clindamyacim")~"Clindamycin",
+    str_detect(cmmed,"Clobetasol Proprionate|Clobetasone Propionate")~"Clobetasol Propionate",
+    str_detect(cmmed,"Clonazepan|Clonezepam")~"Clonazepam",
+    
     str_detect(cmmed, regex("Combigan 0\\.2/0\\.5%", ignore_case = TRUE)) ~ "Combigan 0.2% / 0.5% Oph",
     str_detect(cmmed, regex("Congugated Estrogen", ignore_case = TRUE)) ~ "Conjugated Estrogen",
-    str_detect(cmmed, regex("Coq-10|Coq 10|Coq\\=10|Coq10 Enzyme|Coq10|Coenzyme Q10 \\(Coq10\\)|Coenzime Q10|Coenzyme Q|Coenzyme Q 10|Coenzyme Q-10|Co-Enzyme Q|Co-Enzyme Q-10|Co-Enzyme Q10|Co-Q|Co-Q-10|Co-Q10", ignore_case = TRUE)) ~ "Coenzyme Q10",
+    str_detect(cmmed, regex("Coq-10|Coq 10|Coq\\=10|Coq10 Enzyme|Coq10|Coenzyme Q10 \\(Coq10\\)|Coenzime Q10|Coenzyme Q|Coenzyme Q 10|Coenzyme Q-10|Co-Enzyme Q|Co-Enzyme Q-10|Co-Enzyme Q10|Co-Q|Co-Q-10|Co-Q10|Co Q.10|Co Q10|Co Q10 Enzyme", ignore_case = TRUE)) ~ "Coenzyme Q10",
+    str_detect(cmmed,"Cortisone Injections")~"Cortisone Injection",
     str_detect(cmmed, regex("Cozar", ignore_case = TRUE)) ~ "Cozaar",
     str_detect(cmmed, regex("Cran Actin", ignore_case = TRUE)) ~ "CranActin",
     str_detect(cmmed, regex("Cranberry \\+C", ignore_case = TRUE)) ~ "Cranberry + C",
@@ -139,12 +202,262 @@ cl_med_c <- cl_med_b %>%
 ```
 
 ```{r}
-#Exploratory Data
-cl_med_c%>% 
-  group_by(cmmed)%>%
-  count()
-medication%>% 
-  group_by(CMREASON)%>%
-  count()
+cl_med_def <- cl_med_c %>%
+  mutate(cmmed = case_when(
+    str_detect(cmmed,"Darvocet N-100")~"Darvocet-N 100",
+    str_detect(cmmed,"Decaffeinated Greentea")~"Decaffeinated Green Tea",
+    str_detect(cmmed,"Depahote")~"Depakote",
+    str_detect(cmmed,"Diazepan")~"Diazepam",
+    str_detect(cmmed,"Diclofen Sodium|Diclofenac Sod")~"Diclofenac Sodium",
+    str_detect(cmmed,"Diltiazam")~"Diltiazem",
+    str_detect(cmmed,"Diltiazem Hcl")~"Diltiazem Hydrochloride",
+    str_detect(cmmed,"Diovan/ Hct")~"Diovan Hct",
+    str_detect(cmmed,"Diphenoxylateatropine")~"Diphenoxylate/Atropine",
+    str_detect(cmmed,"Dipyridimole")~"Dipyridamole",
+    str_detect(cmmed,"Doxycycle")~"Doxycycline",
+    str_detect(cmmed,"Duo-Neb")~"Duoneb",
+    str_detect(cmmed,"Dynacirc, Cr")~"Dynacirc Cr",
+    str_detect(cmmed,"Econopred Plus")~"Econopred+",
+    str_detect(cmmed,"Ec Asa|Ec Aspirin|Ec-Asa|Ecasa")~"Ec-Aspirin",
+    str_detect(cmmed,"Effexor Xl|Effexor \\(Xr\\)|Effexor - Xr|Effexor Er")~"Effexor Xr",
+    str_detect(cmmed,"Elidel 1 % Cream")~"Elidel 1% Cream",
+    str_detect(cmmed,"Elocom 0.1%|Elocom Cream")~"Elocom 0.1 % Cream",
+    str_detect(cmmed,"Enablex Sr")~"Enablex Er",
+    str_detect(cmmed,"Enteric Coated Acetlysalicylic Acid|Enteric Coated Acetysalicylic Acid")~"Enteric Coated Acetylsalicylic Acid",
+    str_detect(cmmed,"Enteric-Coated Aspirin")~"Enteric Coated Aspirin",
+    str_detect(cmmed,"Epa")~"Epa Fish Oil",
+    str_detect(cmmed,"Eph-Dha|Epa-Dpa Liquid|Epa/Dha")~"Epa, Dpa Liquid-Flavored Fish Oil",
+    str_detect(cmmed,"Erythromyan")~"Erythromycin",
+    str_detect(cmmed,"Erythromycin Opthalmic Ointment")~"Erythromycin Ophthalmic Ointment",
+    str_detect(cmmed,"Ester-C")~"Ester C",
+    str_detect(cmmed,"Excedrine")~"Excedrin",
+    str_detect(cmmed,"Exelon Parch|Exelon - Patch|Exelon Patch|Exelon 10cm2")~"Exelon",
+    str_detect(cmmed,"Exforgen")~"Exforge",
+    str_detect(cmmed,"Experimental Drug For Htn")~"Experimental Htn Drug",
+    str_detect(cmmed,"Extra Stength Tylenol|Extra-Strength Tylenol")~"Extra Strength Tylenol",
+    str_detect(cmmed,"Ezetimbe|Eztimibe")~"Ezetimibe",
+    str_detect(cmmed,"Fem Ring")~"Femring",
+    str_detect(cmmed,"Fentanyl Patch")~"Fentanyl Transdermal Patch",
+    str_detect(cmmed,"Feosol Iron|Fesol")~"Feosol",
+    str_detect(cmmed,"Fergon Iron")~"Fergon",
+    str_detect(cmmed,"Feso4")~"Ferrous Sulfate",
+    str_detect(cmmed,"Fexofenidine")~"Fexofenadine",
+    str_detect(cmmed,"Fiber-Con")~"Fibercon",
+    str_detect(cmmed,"Finesteride|Finesceride")~"Finasteride",
+    str_detect(cmmed,"Fish Body Oils 1000")~"Fish Body Oil 1000",
+    str_detect(cmmed,"Fish Oil (Omega-3)|Fish Oil / Omega 3|Fish Oil - Omega 3|Fish Oil Omega 3|Fish Oil/ Omega 3")~"Fish Oil + Omega 3",
+    str_detect(cmmed,"Fishoil")~"Fish Oil",
+    str_detect(cmmed,"Fish Oil Caps")~"Fish Oil Capsules",
+    str_detect(cmmed,"Fish Oil - Omega 3 Fatty Acids|Fish Oil /Omega-3 Fatty Acids")~"Fish Oil + Omega 3 Fatty Acids",
+    str_detect(cmmed,"Flackseed Oit|Flackseed Oil|Flak Seed Oil|Flax Oil|Flax Seed Oil")~"Flaxseed Oil",
+    str_detect(cmmed,"Flax Seed")~"Flaxseed",
+    str_detect(cmmed,"Flexerall|Flexaril|Flexoril")~"Flexeril",
+    str_detect(cmmed,"Flonaise")~"Flonase",
+    str_detect(cmmed,"Flunisolide Nasal Spray 0.025%|Flunisolide|Flunisolide 0.025%")~"Flunisolide Nasal Spray",
+    str_detect(cmmed,"Flut Shot")~"Flu Shot",
+    str_detect(cmmed,"Fluticaseon Proprionate|Fluticasone Propinate")~"Fluticasone Propionate",
+    str_detect(cmmed,"Follic Acid")~"Folic Acid",
+    str_detect(cmmed,"Foltex")~"Foltx",
+    str_detect(cmmed,"Formotoral Fumarate|Fomoterol Inhaler")~"Formoterol Fumarate",
+    str_detect(cmmed,"Forward Multimvitamins")~"Forward Multivitamins",
+    str_detect(cmmed,"Fosamax D|Fosamax \\+D|Fosamax/D|Fosomax \\+ D")~"Fosamax Plus D",
+    str_detect(cmmed,"Fosamex|Fosomax|Foxamax")~"Fosamax",
+    str_detect(cmmed,"Fosomax Weekly")~"Fosamax Weekly",
+    TRUE ~ cmmed
+  ))
+
 
 ```
+
+```{r}
+cl_med_ghi <- cl_med_def %>%
+  mutate(cmmed = case_when(
+str_detect(cmmed,"Gabbapentin")~"Gabapentin",
+str_detect(cmmed,"Garlic Tablet|Garlic Tablets")~"Garlic Tabs",
+str_detect(cmmed,"Gas Ex")~"Gas-X Ex",
+str_detect(cmmed,"Gas X")~"Gas-X",
+str_detect(cmmed,"Gelatin Caps|Gelatin")~"Gelatin Capsules",
+str_detect(cmmed,"Gemfibrazol")~"Gemfibrozil",
+str_detect(cmmed,"Gentamycin")~"Gentamicin",
+str_detect(cmmed,"Gingkko Biloba")~"Gingko Biloba",
+str_detect(cmmed,"Ginkgo Bilboba|Ginko Balboa|Ginko Biloba")~"Ginkgo Biloba",
+str_detect(cmmed,"Ginko")~"Ginkgo",
+str_detect(cmmed,"Ginko Biloba Plus Tablet")~"Ginkgo Biloba Plus Tablet",
+str_detect(cmmed,"Glucosamide Chondrotin|Glucosamin And Chondroitin|Glucosamin Chondroitin|Glucosamine  Chondroitin|Glucosamine \\+ Chondroitin|Glucosamine / Chondroitin|Glucosamine /Chondroitin|Glucosamine And Chondriton|Glucosamine And Chondroitin|Glucosamine Chondrointine|Glucosamine Chondroitin|Glucosamine Chondroiton|Glucosamine Chondrotin|Glucosamine Chrondroiten|Glucosamine Chrondroitin|Glucosamine-Chondroitin|Glucosamine/ Chondroitin|Glucosamine/ Chondrotin|Glucosamine/Chondriotin|Glucosamine/Chondroiten|Glucosamine/Chondroitin|Glucosamine/Chondrotin|Glucosamine/Chrondrotin|Glucosamine/Condroitin|Glucosamine Plus Chondroitin")~"Glucosamine & Chondroitin",
+str_detect(cmmed,"Glucosimine|Glucosomine")~"Glucosamine",
+str_detect(cmmed,"Glucosamine And Msn|Glucosamine Msm|Glucosamin/Msm|Glucosamine With Mgs|Glucosamine/Msn|Glucosamine With Msm|Glucosamine W/Msn")~"Glucosamine/Msm",
+str_detect(cmmed,"Glucosamine//+Chondroiton//+Msm")~"Glucosamine/Chondroitin/Msm",
+str_detect(cmmed,"Glucosamine Sulphate")~"Glucosamine Sulfate",
+str_detect(cmmed,"Glucosamine Hc1")~"Glucosamine Hcl",
+str_detect(cmmed,"Glucotrol X L|Glucostrol Xl")~"Glucotrol Xl",
+str_detect(cmmed,"Glybor/Metfrm|Glyburidemetformin")~"Glyburide/Metformin",
+str_detect(cmmed,"Guafenesin|Guaifeneson|Guiafenesin|Guaifensin")~"Guaifenesin",
+str_detect(cmmed,"Glucosamine Chondrioten Sulfate|Glucosamine And Chondroiton Sulfate")~"Glucosamine Chondroitin Sulfate",
+str_detect(cmmed,"Hawthorne")~"Hawthorn",
+str_detect(cmmed,"Hawthorne Berries")~"Hawthorn Berries",
+str_detect(cmmed,"Hctz|Htcz|Hydorchlorothiazide|Hctz (Hydrochlorothiazide)|Hydrochlorothiazide (Hctz)|Hydrochlorathiazide|Hydrochlorithiazide|Hydrochlorot|Hydrochlorothyazide|Hydrochlorthiazide|Hydrocholorthiazide|Hydroclhlorazide|Hydroclorot")~"Hydrochlorothiazide",
+str_detect(cmmed,"Herblax")~"Herb-Lax",
+str_detect(cmmed,"Humera")~"Humira",
+str_detect(cmmed,"Hyalgin")~"Hyalgan",
+str_detect(cmmed,"Hyalurenic Acid")~"Hyaluronic Acid",
+str_detect(cmmed,"Hydorcodone")~"Hydrocodone",
+str_detect(cmmed,"Hydrocortisone Cream 1%")~"Hydrocortisone 1% Cream",
+str_detect(cmmed,"Hydrocodone - Apap|Hydrocodone/Apap|Hydrocodone/Atat|Hydrocodone W/ Acetominophen|Hydrocodoneacetaminophen")~"Hydrocodone Acetaminophen",
+str_detect(cmmed,"Hydromorphine")~"Hydromorphone",
+str_detect(cmmed,"Hydroxizine|Hydroxydine|Hydrozyine")~"Hydroxyzine",
+str_detect(cmmed,"Hyoscyamin")~"Hyoscyamine",
+str_detect(cmmed,"Hyoscyamin Sltb")~"Hyoscyamine Sltb",
+str_detect(cmmed,"Hyrodomorphone Hcl")~"Hydromorphone Hcl",
+str_detect(cmmed,"I Cap|I Caps|I-Cap")~"I-Caps",
+str_detect(cmmed,"I-Caps (Arends Formula)")~"I-Caps (Areds Formula)",
+#ad drug
+str_detect(cmmed,"Galantamine (Razadyne)|Galantamine Er|Galantamine Hydrobromide")~"Galantamine",
+str_detect(cmmed,"Revistagmine")~"Rivastigmine",
+str_detect(cmmed,"Rezadyne")~"Razadyne",
+str_detect(cmmed,"Namenda Hcl|Nameda")~"Namenda",
+str_detect(cmmed,"Memantine Hcl|Mematine|Mementine")~"Memantine",
+#anti-depression drug
+str_detect(cmmed,"Mirtazapine Tablet")~"Mirtazapine",
+str_detect(cmmed,"Prozac Fluoxetine Hcl|Fluoxetine Hcl")~"Fluoxetine",
+str_detect(cmmed,"Sertraline Hcl")~"Sertraline",
+str_detect(cmmed,"Trazodone Hcl")~"Trazodone",
+str_detect(cmmed,"Paroxetine Hydrochloride|Paroxetine Hcl")~"Paroxetine",
+str_detect(cmmed,"Paxil Cr")~"Paxil",
+str_detect(cmmed,"Venlafaxine Hydrochloride Xr")~"Venlafaxine",
+str_detect(cmmed,"Budaprion (Wellbutrin)|Wellbutrin Sr|Wellbutrin Xl|Wellbutrin Xr|Wellbutrin-Xl|Wellbutrinxl")~"Wellbutrin",
+str_detect(cmmed,"Amitriptyline Hcl")~"Amitriptyline",
+str_detect(cmmed,"Bupropion Er|Bupropion Hcl|Bupropion Xl")~"Bupropion",
+str_detect(cmmed,"Citalopram Hbz|Citalopram Hydrobromide")~"Citalopram",
+str_detect(cmmed,"Effexor Xr")~"Effexor",
+TRUE ~ cmmed
+  ))
+
+```
+
+```{r}
+# add keymeds from backmeds with medication table 
+medication_keys <- cl_med_ghi %>% 
+  select(rid, phase, viscode) %>% 
+  distinct()
+backmed_keys <- backmed %>% 
+  select(rid, phase, viscode) %>% 
+  distinct()
+
+# Find the intersection of keys
+common_keys <- intersect(medication_keys, backmed_keys)
+
+medication_with_keymed <- cl_med_ghi %>%
+  full_join(backmed  %>% 
+              select(rid, phase, viscode, keymed), 
+            by = c("rid" = "rid", "phase" = "phase", "viscode" = "viscode"))%>%
+            select(rid, phase, viscode,cmmed, keymed,everything())
+
+#convert string like 1|6 into 20, convert string like 2|4 contains 1,2,3,4,5 into 10, else zero
+medication_with_keymed <- medication_with_keymed %>%
+  mutate(keymed = case_when(
+      is.na(keymed) ~ NA_real_,
+      str_detect(as.character(keymed), "6") ~ 20,  # If string contains 6, convert to 20
+      str_detect(as.character(keymed), "1|2|3|4|5") ~ 10,  # If contains 1, 2, 3, 4, 5, convert to 10
+      TRUE ~ 0
+    ) )
+medication_with_keymed%>%
+  filter(keymed %in% 10)
+# 10 - AD-related treatments, 20 - Anti-depressant medication, 0 - None of above
+medication_with_keymed<-medication_with_keymed%>%
+   mutate(keymed = case_when(
+     is.na(keymed) ~ NA_real_,
+     keymed %in% 1:5 ~ 10,   
+     keymed %in% 6 ~20,
+     keymed %in% 7 ~0,
+     TRUE ~ keymed
+    )
+  )
+
+```
+
+```{r}
+#check exploratory data for medication with keymed
+medication_with_keymed%>%
+  group_by(keymed)%>%
+  count()
+
+#Exploratory Data
+View(cl_med_ghi %>% 
+       group_by(cmmed) %>%
+       count())
+medication%>% 
+  group_by(cmreason)%>%
+  count()
+medication%>%
+  group_by(phase)%>%
+  count()
+backmed%>%
+  group_by(phase)%>%
+  count()
+
+medication%>%
+  filter(rid %in% c(6463,6535))
+```
+
+
+```{r}
+#metformin 
+metformin <-cl_med_ghi%>%
+  filter(str_detect(cmmed, regex("metformin|Glucophage", ignore_case = TRUE)))
+
+View(metformin)
+
+#check metformin rid with the article
+metformin_rid = c(339, 1408, 1423, 2063, 2072, 2193, 2263, 4077, 4432, 4653, 4675, 4689, 4765, 4803, 4919, 6463, 6535)
+
+metformin%>%
+  filter(rid %in% metformin_rid)
+
+
+#AD-specific drugs
+ad_drugs <- cl_med_ghi%>%
+  filter(str_detect(cmmed,regex("Aricept|Donepezil|Donepezil Hcl|Exelon|Razadyne|Rivastigmine|Galantamine|Namenda|Memantine|Hydergine Ergoloid Mesylates|Ergoloid Mesylate", ignore_case = TRUE)))
+
+ad_drugs%>%
+  group_by(cmmed)%>%
+  count()
+# Update the medication_with_keymed by checking for matching rows and filling NA with 10
+medication_with_keymed <- medication_with_keymed %>%
+  mutate(keymed = if_else(is.na(keymed) & rid %in% ad_drugs$rid & phase %in% ad_drugs$phase & viscode %in%ad_drugs$viscode,10,  # Assign 10 for ADs drug
+    keymed
+  ))
+
+#anti-depression drugs
+antidep_drugs <- cl_med_ghi %>%
+  filter(str_detect(cmmed,regex("Fluoxetine|Prozac|Sertraline|Lexapro|Escitalopram Oxalate|Lexapro|Paxil|Paroxetine|Citalopram|Escitalopram Oxalate|Celexa|Cymbalta|Venlafaxine|Effexor|Bupropion|Wellbutrinxl|Mirtazapine|Remeron|Trazodone|Desyrel|Amitriptyline|Nortriptyline|Imipramine|Tofranil Pm
+")))
+
+antidep_drugs%>%
+  group_by(cmmed)%>%
+  count()
+# Update the medication_with_keymed by checking for matching rows and filling NA with 20
+medication_with_keymed <- medication_with_keymed %>%
+  mutate(keymed = if_else(is.na(keymed) & rid %in% antidep_drugs$rid & phase %in% antidep_drugs$phase & viscode %in%antidep_drugs$viscode,20,  # Assign 20 for Anti Depressions drug
+    keymed
+  ))
+
+# convert rest NA to zero %>% mutate(keymed = replace_na(keymed, 0))
+
+na_keymed_rows <- medication_with_keymed %>%
+  filter(is.na(keymed))
+```
+
+
+
+```{r}
+matched_entries <- metformin %>%
+  inner_join(cl_adnimerge, by = "ptid")%>%
+  select(viscode.y, examdate, everything())
+
+matched_entries <- matched_entries%>%
+  group_by(ptid,viscode.y,examdate)
+
+
+View(matched_entries)
+```
+
