@@ -1,0 +1,387 @@
+---
+title: "longitudinal cognition data"
+author: "Ruoying Deng"
+date: "2024-10-08"
+output: html_document
+---
+```{r}
+#library
+library(lubridate)
+library(ADNIMERGE)
+library(dplyr)
+library(lme4)
+library(ggplot2)
+library(car)
+library(nlme)
+```
+
+
+```{r}
+cognitive_marker<-read.csv("/Users/viv/adni_medication/ADSP_ADNI_Cognition_Dec2023/ADSP_PHC_COGN_Dec2023.csv")
+
+cl_cognitive_marker <- cognitive_marker%>%
+  janitor::clean_names()
+
+# add keymed and medication category
+cl_cognitive_marker <- cl_cognitive_marker %>%
+  left_join(medication_with_keymed %>% 
+              select(rid, viscode2, phase, keymed,all_medications,medication_category,visdate),
+            by = c("rid", "viscode2", "phase"))%>%
+  select(rid, viscode2, phase, examdate, visdate,keymed, all_medications,medication_category,everything())
+
+cognitive_marker_distinct <- cl_cognitive_marker %>%
+  distinct(rid, viscode, phase, .keep_all = TRUE)
+
+```
+
+```{r}
+# Convert examdate and visdate columns to Date class
+cognitive_marker_date <- cognitive_marker_distinct %>%
+  mutate(examdate = ymd(examdate),visdate = ymd(visdate))
+
+# Filter out rows where the difference between examdate and visdate is more than one month
+cognitive_marker_filtered <- cognitive_marker_date %>%
+  filter((interval(examdate,visdate) %/% months(1)) > 1)%>%
+  select(rid,viscode,phase,examdate,visdate,everything())
+
+cognitive_marker_distinct%>%
+  filter(rid %in% c(66,70,89,112,150))
+#i noticed that even though there are cases where examdate before visdate, the bl,and other viscode correspond to examdate(66m12,70bl,89m24,112m06,150m24)
+
+# Remove the filtered rows from the original dataset
+#cognitive_marker_date_clean <- anti_join(cognitive_marker_date, cognitive_marker_filtered, by = c("visdate", "examdate"))
+
+```
+
+```{r}
+biomarker<-ADNIMERGE::adnimerge
+cl_biomarker <- biomark%>%
+  janitor::clean_names()
+```
+
+```{r}
+# we notice that some people missing baseline
+cognitive_marker_distinct %>%
+  group_by(rid) %>%
+  summarise(has_baseline = any(viscode2 == "bl")) %>%  
+  filter(has_baseline == FALSE) %>%
+  pull(rid)%>%
+  length()
+# total 3538 patients, 1118 of them missing baseline info
+
+# we notice some patient start screening dec 2023, therefore only one row of sc or bl exist, we filter out them for better longitudinal study
+single_record_rid <- cognitive_marker_distinct %>%
+  group_by(rid) %>%
+  summarise(single_record = n() == 1) %>%
+  filter(single_record) %>%
+  pull(rid)
+
+filtered_longitudinal_data <- cognitive_marker_distinct %>%
+  filter(!rid %in% single_record_rid)
+
+# 0 missing bl now
+filtered_longitudinal_data %>%
+  group_by(rid) %>%
+  summarise(has_baseline = any(viscode2 == "bl")) %>%  
+  filter(has_baseline == FALSE) %>%
+  pull(rid)%>%
+  length()
+
+filtered_longitudinal_data%>%
+  group_by(viscode2)%>%
+  count()
+
+#check on uns1
+filtered_longitudinal_data%>%
+  filter(rid == 168)
+
+filtered_longitudinal_data_clean <- filtered_longitudinal_data %>%
+  mutate(viscode2 = ifelse(viscode2 == "uns1", "m12", viscode2))%>%
+  select(rid,viscode2,phase,examdate,phc_age_cognition,everything())
+
+filtered_longitudinal_data_clean%>%
+  filter(rid == 168)
+
+```
+
+```{r}
+# Extract baseline examdate for each participant
+baseline_dates <- filtered_longitudinal_data_clean %>%
+  filter(viscode2 == "bl") %>%
+  select(rid, examdate) %>%
+  rename(baseline_examdate = examdate)
+
+# Join baseline dates back to the main dataset
+filtered_longitudinal_data_clean <- filtered_longitudinal_data_clean %>%
+  left_join(baseline_dates, by = "rid")
+
+filtered_longitudinal_data_clean <- filtered_longitudinal_data_clean %>%
+  mutate(time_since_baseline = round(as.numeric(difftime(examdate, baseline_examdate, units = "days")/365)))%>%
+  select(rid,viscode2,time_since_baseline,phase,examdate,everything())# time passed in month
+
+
+```
+
+
+```{r}
+# check on four variables
+variables <- c("phc_mem", "phc_exf", "phc_lan", "phc_vsp")
+filtered_longitudinal_data_clean%>%
+  filter(is.na(phc_diagnosis))
+# Filter out missing values for relevant columns
+filtered_longitudinal_data_clean_no_na <- filtered_longitudinal_data_clean %>%
+  filter(!is.na(time_since_baseline) & !is.na(phc_mem) & !is.na(phc_diagnosis))
+
+#merge APOE4 from adnimerge
+adnimerge <- adnimerge %>%
+  janitor::clean_names()
+
+merged_longitudinal_data_no_na <- filtered_longitudinal_data_clean_no_na %>%
+  left_join(adnimerge %>% 
+  select(rid, viscode, examdate, apoe4), by = c("rid", "viscode", "examdate"))  
+
+# Convert dataset from wide to long format and summarize the means
+mean_phc_data <- merged_longitudinal_data_no_na %>%
+  select(phc_diagnosis, time_since_baseline, all_of(variables)) %>%
+  pivot_longer(cols = all_of(variables), names_to = "variable", values_to = "value") %>%
+  group_by(phc_diagnosis, time_since_baseline, variable) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = 'drop')
+
+# Plot the longitudinal model for each variable and combine using facets
+ggplot(mean_phc_data, aes(x = time_since_baseline, y = mean_value, color = as.factor(phc_diagnosis))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_color_manual(
+    name = "Diagnosis",
+    values = c("1" = "green", "2" = "orange", "3" = "red"),
+    labels = c("1" = "Normal Cognition", "2" = "Mild Cognitive Impairment", "3" = "Alzheimer's Disease")
+  ) +
+  labs(
+    title = "Longitudinal Model of Mean Scores by Time Since Baseline",
+    x = "Time Since Baseline (Years)",
+    y = "Mean Score"
+  ) +
+  facet_wrap(~variable, scales = "free_y") +
+  theme_minimal()
+```
+
+
+
+```{r}
+# Prepare data: Split age into baseline and longitudinal components
+merged_longitudinal_data_no_na <- merged_longitudinal_data_no_na %>%
+  group_by(rid) %>%
+  mutate(
+    age_baseline = phc_age_cognition[viscode2 == "bl"],   # Baseline age for each individual
+  ) %>%
+  ungroup()
+
+# 6351 without apoe4 and 4 without ethinicity
+merged_longitudinal_data_no_na%>%
+  group_by(apoe4)%>%
+  count()
+
+merged_longitudinal_data_no_na_clean <- merged_longitudinal_data_no_na %>%
+  drop_na(apoe4,phc_ethnicity)
+
+
+# Fit a linear mixed-effects model with random slope and random intercept with covariate:Phc_diagnosis +race +apoe4 from adnimerge + education + ethinicity + sex  +diagnosis by time interaction
+model_lme <- lme(
+  phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity +apoe4 + phc_education + phc_sex + age_baseline,
+  random = ~ 1 + time_since_baseline | rid, 
+  data = merged_longitudinal_data_no_na_clean, 
+  method = "REML")
+
+summary(model_lme)
+
+# CI
+intervals(model_lme, which = "fixed")
+
+
+model_summary <- summary(model_lme)
+fixed_effects <- model_summary$tTable
+
+# p-values based on the t-statistic and degrees of freedom
+p_values <- 2 * (1 - pt(abs(fixed_effects[, "t-value"]), model_summary$fixDF$X))
+fixed_effects_with_p <- cbind(fixed_effects, "p-value" = p_values)
+
+print(fixed_effects_with_p)
+
+fixed_effects <- fixef(model_lme)
+
+# Extract fixed effect coefficients
+intercept <- fixef(model_lme)["(Intercept)"]
+slope <- fixef(model_lme)["time_since_baseline"]
+
+plot_data <- data.frame(
+  time_since_baseline = seq(0, max(merged_longitudinal_data_no_na_clean$time_since_baseline)))
+
+# Calculate the predicted values based on the intercept and slope
+plot_data$predicted_phc_mem <- intercept + slope * plot_data$time_since_baseline
+ggplot(plot_data, aes(x = time_since_baseline, y = predicted_phc_mem)) +
+  geom_point()+
+  geom_line(color = "blue", size = 1.2) +
+  labs(title = "Fixed Effects - Model Prediction",
+       x = "Time Since Baseline (Years)",
+       y = "Predicted PHC Memory Score") +
+  theme_minimal()
+```
+
+```{r}
+# Create a data frame for each phc_diagnosis
+plot_data <- merged_longitudinal_data_no_na_clean %>%
+  select(phc_diagnosis, phc_race, apoe4, phc_education, phc_sex, phc_ethnicity,age_baseline,time_since_baseline) %>%
+  distinct() %>%
+  mutate(
+    phc_race = ifelse(is.factor(phc_race), levels(phc_race)[1], phc_race),
+    apoe4 = ifelse(is.factor(apoe4), levels(apoe4)[1], apoe4),
+    phc_education = ifelse(is.factor(phc_education), levels(phc_education)[1], phc_education),
+    phc_sex = ifelse(is.factor(phc_sex), levels(phc_sex)[1], phc_sex),
+    age_baseline = median(merged_longitudinal_data_no_na_clean$age_baseline, na.rm = TRUE),
+    phc_ethnicity = ifelse(is.factor(phc_ethnicity),levels(phc_ethnicity)[1],phc_ethnicity)
+  )
+
+
+# Check for missing values before prediction
+sapply(plot_data, function(x) sum(is.na(x)))  # Ensure no missing values in plot_data
+
+# Predict values using the lme model
+plot_data <- plot_data %>%
+  mutate(predicted_phc_mem = predict(model_lme, newdata = ., level = 0))
+
+
+ggplot(plot_data, aes(x = time_since_baseline, y = predicted_phc_mem, color = factor(phc_diagnosis))) +
+  geom_line(size = 1.2) +
+  labs(title = "Predicted PHC Memory Score Over Time by PHC Diagnosis Group",
+       x = "Time Since Baseline (Years)",
+       y = "Predicted PHC Memory Score",
+       color = "PHC Diagnosis") +
+  geom_text(aes(label = round(predicted_phc_mem, 1)), 
+            vjust = -0.5, 
+            size = 3, 
+            check_overlap = TRUE)+
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+# participants with baseline phc_diagnosis = 1
+baseline_diagnosis_1 <- merged_longitudinal_data_no_na_clean %>%
+  filter(phc_diagnosis == 1 & viscode2 == "bl") %>%
+  select(rid) %>% 
+  distinct()
+
+# Check if these participants convert to phc_diagnosis = 3 at any follow-up time
+conversion_to_ad <- merged_longitudinal_data_no_na_clean %>%
+  filter(rid %in% baseline_diagnosis_1$rid & phc_diagnosis == 3) %>%
+  distinct(rid)
+
+num_converted <- nrow(conversion_to_ad)
+
+cat("Number of participants with baseline diagnosis 1 who converted to AD (diagnosis 3):", num_converted, "\n")
+
+converted_data <- merged_longitudinal_data_no_na_clean %>%
+  filter(rid %in% conversion_to_ad$rid) %>%
+  arrange(rid, time_since_baseline)
+
+ggplot(converted_data, aes(x = time_since_baseline, y = phc_diagnosis, color = factor(rid))) +
+  geom_line(size = 1.2) +
+  geom_point(aes(shape = medication_category)) +
+  scale_y_continuous(breaks = c(1, 2, 3), labels = c("Normal (1)", "MCI (2)", "AD (3)")) +
+  labs(title = "Diagnosis Progression Over Time for Participants Converting to AD",
+       x = "Time Since Baseline (Years)",
+       y = "PHC Diagnosis",
+       color = "Participant ID",
+       shape = "Medication Type") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  facet_wrap(~ rid)
+
+```
+
+```{r}
+#data at baseline
+cross_sectional_data <- merged_longitudinal_data_no_na_clean %>%
+  filter(time_since_baseline == 0)
+
+# Fit the linear model with all baseline covariates
+cross_sectional_model <- lm(phc_mem ~ phc_diagnosis + phc_race + apoe4 + phc_education + phc_sex + age_baseline+phc_ethnicity, 
+                            data = cross_sectional_data)
+
+summary(cross_sectional_model)
+
+#prediction
+cross_sectional_data <- cross_sectional_data %>%
+  mutate(predicted_phc_mem = predict(cross_sectional_model, newdata = cross_sectional_data))
+
+
+# Plot actual data points and predicted regression lines by phc_diagnosis
+ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem ))+
+  geom_smooth(method = "loess", se = FALSE, size = 1.2) + 
+  labs(title = "Cross-Sectional Model: Predicted PHC Memory Score by Baseline Covariates",
+       x = "Age at Baseline (Years)",
+       y = "PHC Memory Score") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+#by phc_Diagnosis
+ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem , color = factor(phc_diagnosis)))+
+  geom_smooth(method = "loess", se = FALSE, size = 1.2) + 
+  labs(title = "Cross-Sectional Model: Predicted PHC Memory Score by Baseline Covariates",
+       x = "Age at Baseline (Years)",
+       y = "PHC Memory Score",
+       color = "PHC Diagnosis") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+
+```{r}
+# Check mean and maximum value of age_baseline
+summary_stats <- filtered_longitudinal_data_clean_no_na %>%
+  summarise(
+    min_age_baseline = min(age_baseline),
+    mean_age_baseline = mean(age_baseline), 
+    max_age_baseline = max(age_baseline)  
+  )
+
+print(summary_stats)
+
+# Trend for age 55-65 and age 65-75
+new_data_age_55 <- filtered_longitudinal_data_clean_no_na[filtered_longitudinal_data_clean_no_na$age_baseline >= 55 & 
+                                                              filtered_longitudinal_data_clean_no_na$age_baseline <= 65, ]
+
+new_data_age_65 <- filtered_longitudinal_data_clean_no_na[filtered_longitudinal_data_clean_no_na$age_baseline >= 65 & 
+                                                              filtered_longitudinal_data_clean_no_na$age_baseline <= 75, ]
+
+# Generate predicted values for each dataset using the longitudinal model
+new_data_age_55$predicted_phc_mem <- predict(model_lme, newdata = new_data_age_55)
+new_data_age_65$predicted_phc_mem <- predict(model_lme, newdata = new_data_age_65)
+
+
+ggplot(filtered_longitudinal_data_clean_no_na, aes(x = time_since_baseline)) +
+    geom_line(data = new_data_age_65, aes(y = predicted_phc_mem, linetype = "Age 65-75"), color = "red", size = 1)+
+
+  geom_point(aes(y = phc_mem, color = as.factor(phc_diagnosis)), alpha = 0.5, size = 1.5) +
+
+  geom_line(data = new_data_age_55, aes(y = predicted_phc_mem, linetype = "Age 55-65"), color = "blue", size = 1) +
+  scale_color_manual(name = "PHC Diagnosis",
+                     values = c("1" = "green", "2" = "orange", "3" = "red"),
+                     labels = c("1" = "Normal cognition", "2" = "Mild cognitive impairment", "3" = "Alzheimer's disease")) +
+  scale_linetype_manual(name = "Baseline Age",
+                        values = c("Age 55-65" = "solid", "Age 65-75" = "dashed")) +
+  labs(title = "Longitudinal Trends of PHC_MEM for Different Baseline Ages",
+       x = "Time Since Baseline (Years)",
+       y = "PHC_MEM",
+       color = "PHC Diagnosis",
+       linetype = "Baseline Age") +
+  theme_minimal()
+```
+
+
+```{r}
+# Model = baseline * cross-section + （visit age - baseline) * linear longitudinal
+```
+
+

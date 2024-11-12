@@ -3,26 +3,17 @@ title: "adni_medication"
 output: html_document
 date: "2024-09-03"
 ---
-
-```{r}
-install.packages("Hmisc")
-# Install ADNIMERGE from the local source file
-install.packages("/Users/viv/Downloads/Data___Database/ADNIMERGE_0.0.1.tar.gz", repos = NULL, type = "source")
-
-reccmeds<-ADNIMERGE::reccmeds
-
-reccmeds%>%
-  filter(RID %in% metformin_rid)
-
-
-```
-
 ```{r}
 library(dplyr)
 library(tidyr)
 library(stringr)
 library(tools)
+library(purrr)
+library(lubridate)
+library(ADNIMERGE)
 ```
+
+
 
 ```{r}
 medication = read.csv('/Users/viv/Desktop/data science/meds.csv')
@@ -53,8 +44,13 @@ medication<-medication%>%
   mutate(cmmed = str_replace_all(cmmed, "'", "")) %>%
 
   mutate(cmmed = str_replace_all(cmmed, "\\[\\|194\\|\\]\\[\\|174\\|\\]", "")) 
-```  
 
+#drop na column
+medication <- medication[, colSums(is.na(medication)) < nrow(medication)]
+
+  
+```  
+From dictionary, we identify that viscode2 is Translated visit code;  cmcont check if the medication continuing? 0=No; 1=Yes
 
 ```{r}
 #clean letter a
@@ -333,10 +329,51 @@ TRUE ~ cmmed
   ))
 
 ```
+Then we identify ad-specific drugs and anti-depression drugs,  after that, we add a new column called medication category, where ad-drugs = 1, antidep-drugs = 2, other drugs = 0, so that we can keep original cmmed while knowing the category of each medication from each visit
+```{r}
+# AD-specific drugs
+ad_drugs <- c(
+  "Aricept", "Donepezil", "Donepezil Hcl", "Exelon", "Razadyne",
+  "Rivastigmine", "Galantamine", "Namenda", "Memantine",
+  "Hydergine Ergoloid Mesylates", "Ergoloid Mesylate"
+)
+
+# Anti-depression drugs
+antidep_drugs <- c(
+  "Fluoxetine", "Prozac", "Sertraline", "Lexapro", "Escitalopram Oxalate",
+  "Paxil", "Paroxetine", "Citalopram", "Celexa", "Cymbalta",
+  "Venlafaxine", "Effexor", "Bupropion", "Wellbutrinxl",
+  "Mirtazapine", "Remeron", "Trazodone", "Desyrel",
+  "Amitriptyline", "Nortriptyline", "Imipramine", "Tofranil Pm","Zoloft","Sertraline"
+)
+
+
+cl_med <- cl_med_ghi %>%
+  group_by(ptid, viscode, phase) %>%
+  # Create a concatenated list of all unique medications per visit
+  mutate(all_medications = paste(unique(cmmed), collapse = ", ")) %>%
+  # Determine medication category for each visit
+  mutate(
+    medication_category = case_when(
+      any(cmmed %in% ad_drugs) & any(cmmed %in% antidep_drugs) ~ "1|2",  # If both AD and antidepressant drugs are present
+      any(cmmed %in% ad_drugs) ~ "1",                                   # 1 if any of the AD drugs are present
+      any(cmmed %in% antidep_drugs) ~ "2",                              # 2 if any of the antidepressant drugs are present
+      TRUE ~ "0"                                                        # 0 if neither is present
+    )
+  ) %>%
+  ungroup() %>%
+  select(rid, phase, viscode, visdate, cmmed, medication_category, all_medications, everything())
+
+# Count the number of records for each medication category
+cl_med %>%
+  group_by(medication_category) %>%
+  count()
+
+```
 
 ```{r}
-# add keymeds from backmeds with medication table 
-medication_keys <- cl_med_ghi %>% 
+
+medication_keys <- cl_med %>% 
   select(rid, phase, viscode) %>% 
   distinct()
 backmed_keys <- backmed %>% 
@@ -345,35 +382,121 @@ backmed_keys <- backmed %>%
 
 # Find the intersection of keys
 common_keys <- intersect(medication_keys, backmed_keys)
-
-medication_with_keymed <- cl_med_ghi %>%
+  
+# add keymeds from backmeds with medication table 
+medication_with_keymed <- cl_med %>%
   full_join(backmed  %>% 
               select(rid, phase, viscode, keymed), 
             by = c("rid" = "rid", "phase" = "phase", "viscode" = "viscode"))%>%
-            select(rid, phase, viscode,cmmed, keymed,everything())
+            select(rid, phase, viscode, keymed,everything())
 
-#convert string like 1|6 into 20, convert string like 2|4 contains 1,2,3,4,5 into 10, else zero
-medication_with_keymed <- medication_with_keymed %>%
-  mutate(keymed = case_when(
-      is.na(keymed) ~ NA_real_,
-      str_detect(as.character(keymed), "6") ~ 20,  # If string contains 6, convert to 20
-      str_detect(as.character(keymed), "1|2|3|4|5") ~ 10,  # If contains 1, 2, 3, 4, 5, convert to 10
+# add medication category based on keymed
+cl_med_na <- medication_with_keymed %>%
+  filter(is.na(medication_category))%>%
+  mutate(
+    keymed_codes = str_split(keymed, "\\|"),
+    # Assign medication_category based on keymed_codes
+    medication_category = case_when(
+      map_lgl(keymed_codes, ~ any(.x %in% c("1", "2", "3", "4", "5"))) ~ 1,
+      map_lgl(keymed_codes, ~ any(.x == "6")) ~ 2,
+      map_lgl(keymed_codes, ~ any(.x == "7")) ~ 3, # assign other behavior medication to new category 3
       TRUE ~ 0
-    ) )
-medication_with_keymed%>%
-  filter(keymed %in% 10)
-# 10 - AD-related treatments, 20 - Anti-depressant medication, 0 - None of above
-medication_with_keymed<-medication_with_keymed%>%
-   mutate(keymed = case_when(
-     is.na(keymed) ~ NA_real_,
-     keymed %in% 1:5 ~ 10,   
-     keymed %in% 6 ~20,
-     keymed %in% 7 ~0,
-     TRUE ~ keymed
-    )
-  )
+    )) %>%
+  select(-keymed_codes)
+
+# Update medication_with_keymed to include new categories and resolve errors in type mismatch
+medication_with_keymed_updated <- medication_with_keymed %>%
+  left_join(
+    cl_med_na %>%
+      select(rid, phase, viscode, cmmed, medication_category),
+    by = c("rid", "phase", "viscode", "cmmed"),
+    suffix = c("", "_new")
+  ) %>%
+  mutate(
+    # Convert both columns to character before using coalesce
+    medication_category = coalesce(as.character(medication_category_new), as.character(medication_category))
+  ) %>%
+  select(-medication_category_new)
+
+# View the updated table
+medication_with_keymed_updated%>%
+    group_by(medication_category) %>%
+  count()
+
 
 ```
+
+One issue here is that when keymed like 1|6, or 6|7, medication category only show one of them, but without further information on keymed, i can only fill out NA this way.
+```{r}
+# Add keymed with NA based on cmmed
+#1=Aricept;2=Cognex;3=Exelon;4=Namenda;5=Razadyne;
+#1-5: ad-drugs 6=Anti-depressant medication;7=Other behavioral medication;0=None of the above
+med_code_mapping <- c(
+  "Aricept" = 1,
+  "Cognex" = 2,
+  "Exelon" = 3,
+  "Namenda" = 4,
+  "Razadyne" = 5)
+
+# Function to map medications to codes
+map_meds_to_codes <- function(cmmed_list, med_category_list) {
+  codes_present <- c()
+
+  cmmed_list_lower <- tolower(cmmed_list)
+  
+  # Map medications with medication_category == 1
+  for (med in names(med_code_mapping)) {
+    med_lower <- tolower(med)
+    
+    indices <- which(str_detect(cmmed_list_lower, fixed(med_lower)))
+   
+    if (length(indices) > 0 && any(med_category_list[indices] == 1)) {
+      codes_present <- c(codes_present, med_code_mapping[med])
+    }
+  }
+  
+  # Add '6' if any medication_category == 2
+  if (any(med_category_list == 2)) {
+    codes_present <- c(codes_present, 6)
+  }
+  
+  # If no codes are present, add '0'
+  if (length(codes_present) == 0) {
+    codes_present <- c(0)
+  }
+  
+  # Return the codes as a string separated by '|', sorted and unique
+  return(paste(sort(unique(codes_present)), collapse = "|"))
+}
+
+visit_medication <- medication_with_keymed_updated %>%
+  group_by(rid, phase, viscode) %>%
+  summarise(
+    cmmed_list = list(cmmed),
+    med_category_list = list(medication_category),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    keymed = pmap_chr(
+      list(cmmed_list, med_category_list),
+      map_meds_to_codes
+    )
+  ) %>%
+  ungroup()%>%
+  select(-cmmed_list, -med_category_list)
+
+medication_with_keymed_updated <- medication_with_keymed_updated %>%
+  left_join(visit_medication, by = c("rid", "phase", "viscode"))
+
+
+medication_with_keymed_updated%>%
+  group_by(keymed.y)%>%
+  count()
+
+
+```
+
+I've updated keymed based on the dictionary of keymed, one potential issue here is ad-drugs that doesn't exist in the keymed dictionary will assign 0 to keymed if there are no other medications contributing to keymed.
 
 ```{r}
 #check exploratory data for medication with keymed
@@ -382,9 +505,6 @@ medication_with_keymed%>%
   count()
 
 #Exploratory Data
-View(cl_med_ghi %>% 
-       group_by(cmmed) %>%
-       count())
 medication%>% 
   group_by(cmreason)%>%
   count()
@@ -413,37 +533,14 @@ metformin_rid = c(339, 1408, 1423, 2063, 2072, 2193, 2263, 4077, 4432, 4653, 467
 metformin%>%
   filter(rid %in% metformin_rid)
 
+# Install ADNIMERGE from the local source file
+#reccmeds<-ADNIMERGE::reccmeds
 
-#AD-specific drugs
-ad_drugs <- cl_med_ghi%>%
-  filter(str_detect(cmmed,regex("Aricept|Donepezil|Donepezil Hcl|Exelon|Razadyne|Rivastigmine|Galantamine|Namenda|Memantine|Hydergine Ergoloid Mesylates|Ergoloid Mesylate", ignore_case = TRUE)))
+# check metformin from r package
+#reccmeds%>%
+#  filter(RID %in% metformin_rid)
 
-ad_drugs%>%
-  group_by(cmmed)%>%
-  count()
-# Update the medication_with_keymed by checking for matching rows and filling NA with 10
-medication_with_keymed <- medication_with_keymed %>%
-  mutate(keymed = if_else(is.na(keymed) & rid %in% ad_drugs$rid & phase %in% ad_drugs$phase & viscode %in%ad_drugs$viscode,10,  # Assign 10 for ADs drug
-    keymed
-  ))
-
-#anti-depression drugs
-antidep_drugs <- cl_med_ghi %>%
-  filter(str_detect(cmmed,regex("Fluoxetine|Prozac|Sertraline|Lexapro|Escitalopram Oxalate|Lexapro|Paxil|Paroxetine|Citalopram|Escitalopram Oxalate|Celexa|Cymbalta|Venlafaxine|Effexor|Bupropion|Wellbutrinxl|Mirtazapine|Remeron|Trazodone|Desyrel|Amitriptyline|Nortriptyline|Imipramine|Tofranil Pm
-")))
-
-antidep_drugs%>%
-  group_by(cmmed)%>%
-  count()
-# Update the medication_with_keymed by checking for matching rows and filling NA with 20
-medication_with_keymed <- medication_with_keymed %>%
-  mutate(keymed = if_else(is.na(keymed) & rid %in% antidep_drugs$rid & phase %in% antidep_drugs$phase & viscode %in%antidep_drugs$viscode,20,  # Assign 20 for Anti Depressions drug
-    keymed
-  ))
-
-# convert rest NA to zero %>% mutate(keymed = replace_na(keymed, 0))
-
-na_keymed_rows <- medication_with_keymed %>%
+na_keymed_rows <- visit_medication %>%
   filter(is.na(keymed))
 ```
 
@@ -459,5 +556,41 @@ matched_entries <- matched_entries%>%
 
 
 View(matched_entries)
+```
+
+
+```{r}
+# Load the cognitive marker data
+cognitive_marker <- read.csv("/Users/viv/adni_medication/ADSP_ADNI_Cognition_Dec2023/ADSP_PHC_COGN_Dec2023.csv")
+
+# Clean column names using janitor::clean_names() for consistency
+cl_cognitive_marker <- cognitive_marker %>%
+  janitor::clean_names()
+
+# Ensure that `medication_with_keymed_updated` is properly loaded before the join
+# Add keymed and medication category by joining with the medication dataset
+
+cl_cognitive_marker <- cl_cognitive_marker %>%
+  left_join(medication_with_keymed_updated %>% 
+              # Select relevant columns for the join
+              select(rid, viscode, phase, keymed, all_medications, medication_category, visdate),
+            by = c("rid", "viscode", "phase")) %>% 
+  # Reorder columns, making sure to keep all desired columns
+  select(rid, viscode, phase, keymed, all_medications, medication_category, examdate, visdate, everything())
+```
+
+
+
+```{r}
+# Remove duplicate entries based on 'rid', 'viscode', and 'phase'
+cognitive_marker_distinct <- cl_cognitive_marker %>%
+  distinct(rid, viscode, phase, .keep_all = TRUE)
+# Convert examdate and visdate columns to Date class
+cognitive_marker_date <- cognitive_marker_distinct %>%
+  mutate(examdate = ymd(examdate),visdate = ymd(visdate))
+
+# Filter rows where the difference between examdate and visdate is more than one month
+cognitive_marker_filtered <- cognitive_marker_date %>%
+  filter(abs(interval(visdate, examdate) %/% months(1)) > 1)
 ```
 

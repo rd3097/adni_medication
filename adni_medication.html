@@ -366,13 +366,24 @@ display: none;
 ##     intersect, setdiff, setequal, union</code></pre>
 <pre class="r"><code>library(tidyr)
 library(stringr)
-library(tools)</code></pre>
+library(tools)
+library(purrr)</code></pre>
 <pre class="r"><code>medication = read.csv(&#39;/Users/viv/Desktop/data science/meds.csv&#39;)
-adnimerge = read.csv(&#39;/Users/viv/Desktop/data science/adni_merge.csv&#39;)</code></pre>
-<pre class="r"><code>#clean cmmed for letter a
-cl_med_a &lt;-medication%&gt;%
+adnimerge = read.csv(&#39;/Users/viv/Desktop/data science/adni_merge.csv&#39;)
+# medication for backmeds
+med34 = read.csv(&#39;/Users/viv/Desktop/data science/meds34.csv&#39;)</code></pre>
+<pre class="r"><code># clean table adnimerge
+cl_adnimerge &lt;- adnimerge%&gt;%
+  janitor::clean_names()
+
+#clean backmeds
+backmed &lt;- med34%&gt;%
+  janitor::clean_names()
+#clean cmmed
+medication&lt;-medication%&gt;%
   janitor::clean_names()%&gt;%
   #drop empty 22411 rows
+  filter(cmmed != -4)%&gt;%
   mutate(cmmed = ifelse(cmmed == &quot;&quot;, NA, cmmed))%&gt;%
   drop_na(cmmed)%&gt;%
   mutate(cmmed = str_to_title(cmmed))%&gt;%
@@ -381,7 +392,14 @@ cl_med_a &lt;-medication%&gt;%
   # Remove single quotes from the strings
   mutate(cmmed = str_replace_all(cmmed, &quot;&#39;&quot;, &quot;&quot;)) %&gt;%
 
-  mutate(cmmed = str_replace_all(cmmed, &quot;\\[\\|194\\|\\]\\[\\|174\\|\\]&quot;, &quot;&quot;)) %&gt;%
+  mutate(cmmed = str_replace_all(cmmed, &quot;\\[\\|194\\|\\]\\[\\|174\\|\\]&quot;, &quot;&quot;)) 
+
+#drop na column
+medication &lt;- medication[, colSums(is.na(medication)) &lt; nrow(medication)]</code></pre>
+<p>From dictionary, we identify that viscode2 is Translated visit code;
+cmcont check if the medication continuing? 0=No; 1=Yes</p>
+<pre class="r"><code>#clean letter a
+cl_med_a&lt;-medication%&gt;%
   mutate(cmmed = case_when(
     str_detect(cmmed, &quot;5% Saline Eye Drops&quot;) ~ &quot;5% Saline Eye Drops&quot;,
     str_detect(cmmed, &quot;Abs Sr. Plus&quot;) ~ &quot;Abc Plus Senior&quot;,
@@ -455,7 +473,7 @@ cl_med_b &lt;- cl_med_a %&gt;%
     str_detect(cmmed, &quot;Bethamethasone Valerate&quot;) ~ &quot;Betamethasone Valerate&quot;,
     str_detect(cmmed, &quot;Bisopril \\(Hctz\\)|Bisopropolol/Hctz&quot;) ~ &quot;Bisoprolol Hctz&quot;,
     str_detect(cmmed, &quot;Black Cohash&quot;) ~ &quot;Black Cohosh&quot;,
-    str_detect(cmmed, &quot;Bone Up&quot;) ~ &quot;BoneUp&quot;,
+    str_detect(cmmed, &quot;Bone Up&quot;) ~ &quot;Boneup&quot;,
     str_detect(cmmed, &quot;Brimonidine Tartate&quot;) ~ &quot;Brimonidine Tartrate&quot;,
     str_detect(cmmed, &quot;Buproprion&quot;) ~ &quot;Bupropion&quot;,
     str_detect(cmmed, &quot;Buproprion Er&quot;) ~ &quot;Bupropion Er&quot;,
@@ -465,50 +483,612 @@ cl_med_b &lt;- cl_med_a %&gt;%
   ))</code></pre>
 <pre class="r"><code>cl_med_c &lt;- cl_med_b %&gt;%
   mutate(cmmed = case_when(
+    str_detect(cmmed,&quot;Ca, Mg, K&quot;)~&quot;Ca + Mg + K&quot;,
     str_detect(cmmed, regex(
-      &quot;Ca W/ Vitamin D|Calcium &amp; D|Calcium &amp; Vitamin D|Calcium \\+ D|Calcium \\+ Vit D|Calcium \\+ Vit\\. D|Calcium \\+D|Calcium \\+Vit D|Calcium / Vitamin D|Calcium /Vitamin D|Calcium And Vitamin D|Calcium Vit D|Calcium/Vit D|Calcium/Vitamin D|Calcuim \\+ Vitamin D|Calcuim And Vitamin D|Calcuim Plus Vitamin D|Calcuim With Vitamin D&quot;, 
+      &quot;Ca W/ Vitamin D|Calcium &amp; D|Calcium &amp; Vitamin D|Calcium \\+ D|Calcium \\+ Vit D|Calcium \\+ Vit\\. D|Calcium \\+D|Calcium \\+Vit D|Calcium / Vitamin D|Calcium And Vitamin D|Calcium Vit D|Calcium/Vit D|Calcium/Vitamin D|Calcuim \\+ Vitamin D|Calcuim And Vitamin D|Calcuim Plus Vitamin D|Calcuim With Vitamin D|Calcium-Vitamin D|Ca/D|Calcium /Vitamin D|Calcium D|Calcium Plus Vit D|Calcium Plus Vitamin D|Calcium Plus D|Calcium W/ Vit D|Calcium W/ Vitamin D|Calcium W/D|Calcium W/Vit D|Calcium W/Vitamin D|Calcium With D|Calcium With Vit D|Calcium With Vit. D|Calcium With Vitamin D|Calcium Wtih Vit D|Calcium\\+D|Calcium\\+Vitamin D|Calicum \\&amp; Vitamin D|Calcium/ Vitamin D|Calcium/D&quot;, 
       ignore_case = TRUE)) ~ &quot;Calcium + Vitamin D&quot;,
-    str_detect(cmmed, regex(&quot;B 100&quot;, ignore_case = TRUE)) ~ &quot;B-100&quot;,
+    str_detect(cmmed, regex(&quot;Calcium \\(500mg\\) \\+ Vitamin D \\(125iu\\)&quot;, ignore_case = TRUE)) ~ &quot;Calcium (500 Mg) + Vitamin D3 (125 Iu)&quot;,
+    str_detect(cmmed,&quot;Calcium And Magnesium|Cal Mag|Cal Mag T|Cal-Mag|Calcium Mag|Calcium Magnesium|Calcium With Magnesium|Calcium-Magnesium|Calcium\\&amp;Magnesium Suppl.|Calcium/Magnesium|Calcium/Mg&quot;)~&quot;Calcium + Magnesium&quot;,
+    str_detect(cmmed,&quot;Calcium With Vitamind D And Magnesium&quot;)~&quot;Calcium, Magnesium And Vitamin D&quot;,
+    str_detect(cmmed,&quot;Calcium/Zing/Magnesium Supplement&quot;)~&quot;Calcium, Magnesium, Zinc&quot;,
+    str_detect(cmmed,&quot;Calcium Carbonate Vitamin D|Calcium Carbonate W/ Vitamin D|Calcium Carbonate W/Vitamin D|Calcium Carbonate/Vitamin D&quot;)~&quot;Calcium Carbonate + Vitamin D&quot;,
+    str_detect(cmmed,&quot;Calcium, Magnesium \\&amp; Zinc|Calcium, Zinc, Magnesium&quot;)~&quot;Calcium, Magnesium, Zinc&quot;,
+    str_detect(cmmed,&quot;Calcium Cit&quot;)~&quot;Calcium Citrate&quot;,
+    str_detect(cmmed,&quot;Calcium Citrate \\+D|Calcium Citrate Plus D|Calcium Citrate With Vit D|Calcium Citrate With Vitamin D|Calcium Citrate Wvitamin D Nos|Calcium Citrate/Vit D|Calcium Citrate/Vitamin D&quot;)~&quot;Calcium Citrate +Vitamin D&quot;,
+    str_detect(cmmed,&quot;Calcium Citrate Magnesium|Calcium/Magnesium Citrate&quot;)~&quot;Calcium Citrate With Magnesium&quot;,
+    str_detect(cmmed,&quot;Calicum&quot;)~&quot;Calcium&quot;,
     str_detect(cmmed, regex(&quot;Calcium 600 - D|Calcium 600 D|Calcium 600 \\+ D|Calcium 600\\+D&quot;, ignore_case = TRUE)) ~ &quot;Calcium 600 Plus Vitamin D&quot;,
+      str_detect(cmmed,&quot;Caltrate With Vitamin D|Caltrate-D|Caltrate Plus&quot;)~&quot;Caltrate D&quot;,
+    str_detect(cmmed,&quot;Carbidopalevodopa&quot;)~&quot;Carbidopa/Levodopa&quot;,
+    str_detect(cmmed,&quot;Cartia Xl&quot;)~&quot;Cartia Xt&quot;,
+    str_detect(cmmed, &quot;Celexia&quot;)~&quot;Celexa&quot;,
+    str_detect(cmmed,&quot;Centralvite&quot;)~&quot;Central Vite&quot;,
+    str_detect(cmmed,&quot;Centrum A To Zinc&quot;)~&quot;Centrum A-Z&quot;,
+    str_detect(cmmed,&quot;Centravite Sr|Centrum Snior&quot;)~&quot;Centrum Senior&quot;,
+    str_detect(cmmed,&quot;Centrum-Silver|Centrum Sliver|Centrum Silver 2000&quot;)~&quot;Centrum Silver&quot;,
+    str_detect(cmmed,&quot;Centrum Silver Mvi|Centrum Silver Multivitamin|Centrum Silver, Multivitamins|Centrum Silver- Mvi&quot;)~&quot;Centrum Silver Multi-Vitamin&quot;,
+    str_detect(cmmed,&quot;Cephalfrin&quot;)~&quot;Cephalexin&quot;,
+    str_detect(cmmed,&quot;Cetiricine Hcl|Cetirizine Hcl&quot;)~&quot;Cetirizine Hydrochloride&quot;,
+    str_detect(cmmed,&quot;Choline Bititrate&quot;)~&quot;Choline Bitartrate&quot;,
+    str_detect(cmmed,&quot;Chondroiton/Glucosamine|Chondroitin With Glucosamine|Chondroitin Wglucosamine|Chondroitin Glucosamine&quot;)~&quot;Chondroitin/Glucosamine&quot;,
+    str_detect(cmmed,&quot;Chromium Picolonate&quot;)~&quot;Chromium Picolinate&quot;,
+    str_detect(cmmed,&quot;Ciproflaxacin Hcl&quot;)~&quot;Ciprofloxacin Hcl&quot;,
+    str_detect(cmmed,&quot;Citalopran&quot;)~&quot;Citalopram&quot;,
+    str_detect(cmmed,&quot;Citracal \\+ Vit D|Citracal \\+D|Citracal D\\+|Citrical With D|Citrical\\+Vitamin D&quot;)~&quot;Citracal + D&quot;,
+    str_detect(cmmed,&quot;Citrocel&quot;)~&quot;Citrucel&quot;,
+    str_detect(cmmed,&quot;Claratin|Claritan&quot;)~&quot;Claritin&quot;,
+    str_detect(cmmed,&quot;Climera&quot;)~&quot;Climara&quot;,
+    str_detect(cmmed,&quot;Clindamyacim&quot;)~&quot;Clindamycin&quot;,
+    str_detect(cmmed,&quot;Clobetasol Proprionate|Clobetasone Propionate&quot;)~&quot;Clobetasol Propionate&quot;,
+    str_detect(cmmed,&quot;Clonazepan|Clonezepam&quot;)~&quot;Clonazepam&quot;,
+    
     str_detect(cmmed, regex(&quot;Combigan 0\\.2/0\\.5%&quot;, ignore_case = TRUE)) ~ &quot;Combigan 0.2% / 0.5% Oph&quot;,
     str_detect(cmmed, regex(&quot;Congugated Estrogen&quot;, ignore_case = TRUE)) ~ &quot;Conjugated Estrogen&quot;,
-    str_detect(cmmed, regex(&quot;Coq-10|Coq 10|Coq\\=10|Coq10 Enzyme|Coq10|Coenzyme Q10 \\(Coq10\\)|Coenzime Q10|Coenzyme Q|Coenzyme Q 10|Coenzyme Q-10|Co-Enzyme Q|Co-Enzyme Q-10|Co-Enzyme Q10|Co-Q|Co-Q-10|Co-Q10&quot;, ignore_case = TRUE)) ~ &quot;Coenzyme Q10&quot;,
+    str_detect(cmmed, regex(&quot;Coq-10|Coq 10|Coq\\=10|Coq10 Enzyme|Coq10|Coenzyme Q10 \\(Coq10\\)|Coenzime Q10|Coenzyme Q|Coenzyme Q 10|Coenzyme Q-10|Co-Enzyme Q|Co-Enzyme Q-10|Co-Enzyme Q10|Co-Q|Co-Q-10|Co-Q10|Co Q.10|Co Q10|Co Q10 Enzyme&quot;, ignore_case = TRUE)) ~ &quot;Coenzyme Q10&quot;,
+    str_detect(cmmed,&quot;Cortisone Injections&quot;)~&quot;Cortisone Injection&quot;,
     str_detect(cmmed, regex(&quot;Cozar&quot;, ignore_case = TRUE)) ~ &quot;Cozaar&quot;,
     str_detect(cmmed, regex(&quot;Cran Actin&quot;, ignore_case = TRUE)) ~ &quot;CranActin&quot;,
     str_detect(cmmed, regex(&quot;Cranberry \\+C&quot;, ignore_case = TRUE)) ~ &quot;Cranberry + C&quot;,
     TRUE ~ cmmed
   ))</code></pre>
-<pre class="r"><code>#Exploratory Data
-cl_med_c%&gt;% 
-  group_by(cmmed)%&gt;%
+<pre class="r"><code>cl_med_def &lt;- cl_med_c %&gt;%
+  mutate(cmmed = case_when(
+    str_detect(cmmed,&quot;Darvocet N-100&quot;)~&quot;Darvocet-N 100&quot;,
+    str_detect(cmmed,&quot;Decaffeinated Greentea&quot;)~&quot;Decaffeinated Green Tea&quot;,
+    str_detect(cmmed,&quot;Depahote&quot;)~&quot;Depakote&quot;,
+    str_detect(cmmed,&quot;Diazepan&quot;)~&quot;Diazepam&quot;,
+    str_detect(cmmed,&quot;Diclofen Sodium|Diclofenac Sod&quot;)~&quot;Diclofenac Sodium&quot;,
+    str_detect(cmmed,&quot;Diltiazam&quot;)~&quot;Diltiazem&quot;,
+    str_detect(cmmed,&quot;Diltiazem Hcl&quot;)~&quot;Diltiazem Hydrochloride&quot;,
+    str_detect(cmmed,&quot;Diovan/ Hct&quot;)~&quot;Diovan Hct&quot;,
+    str_detect(cmmed,&quot;Diphenoxylateatropine&quot;)~&quot;Diphenoxylate/Atropine&quot;,
+    str_detect(cmmed,&quot;Dipyridimole&quot;)~&quot;Dipyridamole&quot;,
+    str_detect(cmmed,&quot;Doxycycle&quot;)~&quot;Doxycycline&quot;,
+    str_detect(cmmed,&quot;Duo-Neb&quot;)~&quot;Duoneb&quot;,
+    str_detect(cmmed,&quot;Dynacirc, Cr&quot;)~&quot;Dynacirc Cr&quot;,
+    str_detect(cmmed,&quot;Econopred Plus&quot;)~&quot;Econopred+&quot;,
+    str_detect(cmmed,&quot;Ec Asa|Ec Aspirin|Ec-Asa|Ecasa&quot;)~&quot;Ec-Aspirin&quot;,
+    str_detect(cmmed,&quot;Effexor Xl|Effexor \\(Xr\\)|Effexor - Xr|Effexor Er&quot;)~&quot;Effexor Xr&quot;,
+    str_detect(cmmed,&quot;Elidel 1 % Cream&quot;)~&quot;Elidel 1% Cream&quot;,
+    str_detect(cmmed,&quot;Elocom 0.1%|Elocom Cream&quot;)~&quot;Elocom 0.1 % Cream&quot;,
+    str_detect(cmmed,&quot;Enablex Sr&quot;)~&quot;Enablex Er&quot;,
+    str_detect(cmmed,&quot;Enteric Coated Acetlysalicylic Acid|Enteric Coated Acetysalicylic Acid&quot;)~&quot;Enteric Coated Acetylsalicylic Acid&quot;,
+    str_detect(cmmed,&quot;Enteric-Coated Aspirin&quot;)~&quot;Enteric Coated Aspirin&quot;,
+    str_detect(cmmed,&quot;Epa&quot;)~&quot;Epa Fish Oil&quot;,
+    str_detect(cmmed,&quot;Eph-Dha|Epa-Dpa Liquid|Epa/Dha&quot;)~&quot;Epa, Dpa Liquid-Flavored Fish Oil&quot;,
+    str_detect(cmmed,&quot;Erythromyan&quot;)~&quot;Erythromycin&quot;,
+    str_detect(cmmed,&quot;Erythromycin Opthalmic Ointment&quot;)~&quot;Erythromycin Ophthalmic Ointment&quot;,
+    str_detect(cmmed,&quot;Ester-C&quot;)~&quot;Ester C&quot;,
+    str_detect(cmmed,&quot;Excedrine&quot;)~&quot;Excedrin&quot;,
+    str_detect(cmmed,&quot;Exelon Parch|Exelon - Patch|Exelon Patch|Exelon 10cm2&quot;)~&quot;Exelon&quot;,
+    str_detect(cmmed,&quot;Exforgen&quot;)~&quot;Exforge&quot;,
+    str_detect(cmmed,&quot;Experimental Drug For Htn&quot;)~&quot;Experimental Htn Drug&quot;,
+    str_detect(cmmed,&quot;Extra Stength Tylenol|Extra-Strength Tylenol&quot;)~&quot;Extra Strength Tylenol&quot;,
+    str_detect(cmmed,&quot;Ezetimbe|Eztimibe&quot;)~&quot;Ezetimibe&quot;,
+    str_detect(cmmed,&quot;Fem Ring&quot;)~&quot;Femring&quot;,
+    str_detect(cmmed,&quot;Fentanyl Patch&quot;)~&quot;Fentanyl Transdermal Patch&quot;,
+    str_detect(cmmed,&quot;Feosol Iron|Fesol&quot;)~&quot;Feosol&quot;,
+    str_detect(cmmed,&quot;Fergon Iron&quot;)~&quot;Fergon&quot;,
+    str_detect(cmmed,&quot;Feso4&quot;)~&quot;Ferrous Sulfate&quot;,
+    str_detect(cmmed,&quot;Fexofenidine&quot;)~&quot;Fexofenadine&quot;,
+    str_detect(cmmed,&quot;Fiber-Con&quot;)~&quot;Fibercon&quot;,
+    str_detect(cmmed,&quot;Finesteride|Finesceride&quot;)~&quot;Finasteride&quot;,
+    str_detect(cmmed,&quot;Fish Body Oils 1000&quot;)~&quot;Fish Body Oil 1000&quot;,
+    str_detect(cmmed,&quot;Fish Oil (Omega-3)|Fish Oil / Omega 3|Fish Oil - Omega 3|Fish Oil Omega 3|Fish Oil/ Omega 3&quot;)~&quot;Fish Oil + Omega 3&quot;,
+    str_detect(cmmed,&quot;Fishoil&quot;)~&quot;Fish Oil&quot;,
+    str_detect(cmmed,&quot;Fish Oil Caps&quot;)~&quot;Fish Oil Capsules&quot;,
+    str_detect(cmmed,&quot;Fish Oil - Omega 3 Fatty Acids|Fish Oil /Omega-3 Fatty Acids&quot;)~&quot;Fish Oil + Omega 3 Fatty Acids&quot;,
+    str_detect(cmmed,&quot;Flackseed Oit|Flackseed Oil|Flak Seed Oil|Flax Oil|Flax Seed Oil&quot;)~&quot;Flaxseed Oil&quot;,
+    str_detect(cmmed,&quot;Flax Seed&quot;)~&quot;Flaxseed&quot;,
+    str_detect(cmmed,&quot;Flexerall|Flexaril|Flexoril&quot;)~&quot;Flexeril&quot;,
+    str_detect(cmmed,&quot;Flonaise&quot;)~&quot;Flonase&quot;,
+    str_detect(cmmed,&quot;Flunisolide Nasal Spray 0.025%|Flunisolide|Flunisolide 0.025%&quot;)~&quot;Flunisolide Nasal Spray&quot;,
+    str_detect(cmmed,&quot;Flut Shot&quot;)~&quot;Flu Shot&quot;,
+    str_detect(cmmed,&quot;Fluticaseon Proprionate|Fluticasone Propinate&quot;)~&quot;Fluticasone Propionate&quot;,
+    str_detect(cmmed,&quot;Follic Acid&quot;)~&quot;Folic Acid&quot;,
+    str_detect(cmmed,&quot;Foltex&quot;)~&quot;Foltx&quot;,
+    str_detect(cmmed,&quot;Formotoral Fumarate|Fomoterol Inhaler&quot;)~&quot;Formoterol Fumarate&quot;,
+    str_detect(cmmed,&quot;Forward Multimvitamins&quot;)~&quot;Forward Multivitamins&quot;,
+    str_detect(cmmed,&quot;Fosamax D|Fosamax \\+D|Fosamax/D|Fosomax \\+ D&quot;)~&quot;Fosamax Plus D&quot;,
+    str_detect(cmmed,&quot;Fosamex|Fosomax|Foxamax&quot;)~&quot;Fosamax&quot;,
+    str_detect(cmmed,&quot;Fosomax Weekly&quot;)~&quot;Fosamax Weekly&quot;,
+    TRUE ~ cmmed
+  ))</code></pre>
+<pre class="r"><code>cl_med_ghi &lt;- cl_med_def %&gt;%
+  mutate(cmmed = case_when(
+str_detect(cmmed,&quot;Gabbapentin&quot;)~&quot;Gabapentin&quot;,
+str_detect(cmmed,&quot;Garlic Tablet|Garlic Tablets&quot;)~&quot;Garlic Tabs&quot;,
+str_detect(cmmed,&quot;Gas Ex&quot;)~&quot;Gas-X Ex&quot;,
+str_detect(cmmed,&quot;Gas X&quot;)~&quot;Gas-X&quot;,
+str_detect(cmmed,&quot;Gelatin Caps|Gelatin&quot;)~&quot;Gelatin Capsules&quot;,
+str_detect(cmmed,&quot;Gemfibrazol&quot;)~&quot;Gemfibrozil&quot;,
+str_detect(cmmed,&quot;Gentamycin&quot;)~&quot;Gentamicin&quot;,
+str_detect(cmmed,&quot;Gingkko Biloba&quot;)~&quot;Gingko Biloba&quot;,
+str_detect(cmmed,&quot;Ginkgo Bilboba|Ginko Balboa|Ginko Biloba&quot;)~&quot;Ginkgo Biloba&quot;,
+str_detect(cmmed,&quot;Ginko&quot;)~&quot;Ginkgo&quot;,
+str_detect(cmmed,&quot;Ginko Biloba Plus Tablet&quot;)~&quot;Ginkgo Biloba Plus Tablet&quot;,
+str_detect(cmmed,&quot;Glucosamide Chondrotin|Glucosamin And Chondroitin|Glucosamin Chondroitin|Glucosamine  Chondroitin|Glucosamine \\+ Chondroitin|Glucosamine / Chondroitin|Glucosamine /Chondroitin|Glucosamine And Chondriton|Glucosamine And Chondroitin|Glucosamine Chondrointine|Glucosamine Chondroitin|Glucosamine Chondroiton|Glucosamine Chondrotin|Glucosamine Chrondroiten|Glucosamine Chrondroitin|Glucosamine-Chondroitin|Glucosamine/ Chondroitin|Glucosamine/ Chondrotin|Glucosamine/Chondriotin|Glucosamine/Chondroiten|Glucosamine/Chondroitin|Glucosamine/Chondrotin|Glucosamine/Chrondrotin|Glucosamine/Condroitin|Glucosamine Plus Chondroitin&quot;)~&quot;Glucosamine &amp; Chondroitin&quot;,
+str_detect(cmmed,&quot;Glucosimine|Glucosomine&quot;)~&quot;Glucosamine&quot;,
+str_detect(cmmed,&quot;Glucosamine And Msn|Glucosamine Msm|Glucosamin/Msm|Glucosamine With Mgs|Glucosamine/Msn|Glucosamine With Msm|Glucosamine W/Msn&quot;)~&quot;Glucosamine/Msm&quot;,
+str_detect(cmmed,&quot;Glucosamine//+Chondroiton//+Msm&quot;)~&quot;Glucosamine/Chondroitin/Msm&quot;,
+str_detect(cmmed,&quot;Glucosamine Sulphate&quot;)~&quot;Glucosamine Sulfate&quot;,
+str_detect(cmmed,&quot;Glucosamine Hc1&quot;)~&quot;Glucosamine Hcl&quot;,
+str_detect(cmmed,&quot;Glucotrol X L|Glucostrol Xl&quot;)~&quot;Glucotrol Xl&quot;,
+str_detect(cmmed,&quot;Glybor/Metfrm|Glyburidemetformin&quot;)~&quot;Glyburide/Metformin&quot;,
+str_detect(cmmed,&quot;Guafenesin|Guaifeneson|Guiafenesin|Guaifensin&quot;)~&quot;Guaifenesin&quot;,
+str_detect(cmmed,&quot;Glucosamine Chondrioten Sulfate|Glucosamine And Chondroiton Sulfate&quot;)~&quot;Glucosamine Chondroitin Sulfate&quot;,
+str_detect(cmmed,&quot;Hawthorne&quot;)~&quot;Hawthorn&quot;,
+str_detect(cmmed,&quot;Hawthorne Berries&quot;)~&quot;Hawthorn Berries&quot;,
+str_detect(cmmed,&quot;Hctz|Htcz|Hydorchlorothiazide|Hctz (Hydrochlorothiazide)|Hydrochlorothiazide (Hctz)|Hydrochlorathiazide|Hydrochlorithiazide|Hydrochlorot|Hydrochlorothyazide|Hydrochlorthiazide|Hydrocholorthiazide|Hydroclhlorazide|Hydroclorot&quot;)~&quot;Hydrochlorothiazide&quot;,
+str_detect(cmmed,&quot;Herblax&quot;)~&quot;Herb-Lax&quot;,
+str_detect(cmmed,&quot;Humera&quot;)~&quot;Humira&quot;,
+str_detect(cmmed,&quot;Hyalgin&quot;)~&quot;Hyalgan&quot;,
+str_detect(cmmed,&quot;Hyalurenic Acid&quot;)~&quot;Hyaluronic Acid&quot;,
+str_detect(cmmed,&quot;Hydorcodone&quot;)~&quot;Hydrocodone&quot;,
+str_detect(cmmed,&quot;Hydrocortisone Cream 1%&quot;)~&quot;Hydrocortisone 1% Cream&quot;,
+str_detect(cmmed,&quot;Hydrocodone - Apap|Hydrocodone/Apap|Hydrocodone/Atat|Hydrocodone W/ Acetominophen|Hydrocodoneacetaminophen&quot;)~&quot;Hydrocodone Acetaminophen&quot;,
+str_detect(cmmed,&quot;Hydromorphine&quot;)~&quot;Hydromorphone&quot;,
+str_detect(cmmed,&quot;Hydroxizine|Hydroxydine|Hydrozyine&quot;)~&quot;Hydroxyzine&quot;,
+str_detect(cmmed,&quot;Hyoscyamin&quot;)~&quot;Hyoscyamine&quot;,
+str_detect(cmmed,&quot;Hyoscyamin Sltb&quot;)~&quot;Hyoscyamine Sltb&quot;,
+str_detect(cmmed,&quot;Hyrodomorphone Hcl&quot;)~&quot;Hydromorphone Hcl&quot;,
+str_detect(cmmed,&quot;I Cap|I Caps|I-Cap&quot;)~&quot;I-Caps&quot;,
+str_detect(cmmed,&quot;I-Caps (Arends Formula)&quot;)~&quot;I-Caps (Areds Formula)&quot;,
+#ad drug
+str_detect(cmmed,&quot;Galantamine (Razadyne)|Galantamine Er|Galantamine Hydrobromide&quot;)~&quot;Galantamine&quot;,
+str_detect(cmmed,&quot;Revistagmine&quot;)~&quot;Rivastigmine&quot;,
+str_detect(cmmed,&quot;Rezadyne&quot;)~&quot;Razadyne&quot;,
+str_detect(cmmed,&quot;Namenda Hcl|Nameda&quot;)~&quot;Namenda&quot;,
+str_detect(cmmed,&quot;Memantine Hcl|Mematine|Mementine&quot;)~&quot;Memantine&quot;,
+#anti-depression drug
+str_detect(cmmed,&quot;Mirtazapine Tablet&quot;)~&quot;Mirtazapine&quot;,
+str_detect(cmmed,&quot;Prozac Fluoxetine Hcl|Fluoxetine Hcl&quot;)~&quot;Fluoxetine&quot;,
+str_detect(cmmed,&quot;Sertraline Hcl&quot;)~&quot;Sertraline&quot;,
+str_detect(cmmed,&quot;Trazodone Hcl&quot;)~&quot;Trazodone&quot;,
+str_detect(cmmed,&quot;Paroxetine Hydrochloride|Paroxetine Hcl&quot;)~&quot;Paroxetine&quot;,
+str_detect(cmmed,&quot;Paxil Cr&quot;)~&quot;Paxil&quot;,
+str_detect(cmmed,&quot;Venlafaxine Hydrochloride Xr&quot;)~&quot;Venlafaxine&quot;,
+str_detect(cmmed,&quot;Budaprion (Wellbutrin)|Wellbutrin Sr|Wellbutrin Xl|Wellbutrin Xr|Wellbutrin-Xl|Wellbutrinxl&quot;)~&quot;Wellbutrin&quot;,
+str_detect(cmmed,&quot;Amitriptyline Hcl&quot;)~&quot;Amitriptyline&quot;,
+str_detect(cmmed,&quot;Bupropion Er|Bupropion Hcl|Bupropion Xl&quot;)~&quot;Bupropion&quot;,
+str_detect(cmmed,&quot;Citalopram Hbz|Citalopram Hydrobromide&quot;)~&quot;Citalopram&quot;,
+str_detect(cmmed,&quot;Effexor Xr&quot;)~&quot;Effexor&quot;,
+TRUE ~ cmmed
+  ))</code></pre>
+<p>Then we identify ad-specific drugs and anti-depression drugs, after
+that, we add a new column called medication category, where ad-drugs =
+1, antidep-drugs = 2, other drugs = 0, so that we can keep original
+cmmed while knowing the category of each medication from each visit</p>
+<pre class="r"><code># AD-specific drugs
+ad_drugs &lt;- c(
+  &quot;Aricept&quot;, &quot;Donepezil&quot;, &quot;Donepezil Hcl&quot;, &quot;Exelon&quot;, &quot;Razadyne&quot;,
+  &quot;Rivastigmine&quot;, &quot;Galantamine&quot;, &quot;Namenda&quot;, &quot;Memantine&quot;,
+  &quot;Hydergine Ergoloid Mesylates&quot;, &quot;Ergoloid Mesylate&quot;
+)
+
+# Anti-depression drugs
+antidep_drugs &lt;- c(
+  &quot;Fluoxetine&quot;, &quot;Prozac&quot;, &quot;Sertraline&quot;, &quot;Lexapro&quot;, &quot;Escitalopram Oxalate&quot;,
+  &quot;Paxil&quot;, &quot;Paroxetine&quot;, &quot;Citalopram&quot;, &quot;Celexa&quot;, &quot;Cymbalta&quot;,
+  &quot;Venlafaxine&quot;, &quot;Effexor&quot;, &quot;Bupropion&quot;, &quot;Wellbutrinxl&quot;,
+  &quot;Mirtazapine&quot;, &quot;Remeron&quot;, &quot;Trazodone&quot;, &quot;Desyrel&quot;,
+  &quot;Amitriptyline&quot;, &quot;Nortriptyline&quot;, &quot;Imipramine&quot;, &quot;Tofranil Pm&quot;,&quot;Zoloft&quot;,&quot;Sertraline&quot;
+)
+
+
+cl_med &lt;- cl_med_ghi %&gt;%
+  group_by(ptid, viscode, phase) %&gt;%
+  # Create a concatenated list of all unique medications per visit
+  mutate(all_medications = paste(unique(cmmed), collapse = &quot;, &quot;)) %&gt;%
+  # Determine medication category for each visit
+  mutate(
+    medication_category = case_when(
+      any(cmmed %in% ad_drugs) &amp; any(cmmed %in% antidep_drugs) ~ &quot;1|2&quot;,  # If both AD and antidepressant drugs are present
+      any(cmmed %in% ad_drugs) ~ &quot;1&quot;,                                   # 1 if any of the AD drugs are present
+      any(cmmed %in% antidep_drugs) ~ &quot;2&quot;,                              # 2 if any of the antidepressant drugs are present
+      TRUE ~ &quot;0&quot;                                                        # 0 if neither is present
+    )
+  ) %&gt;%
+  ungroup() %&gt;%
+  select(rid, phase, viscode, visdate, cmmed, medication_category, all_medications, everything())
+
+# Count the number of records for each medication category
+cl_med %&gt;%
+  group_by(medication_category) %&gt;%
   count()</code></pre>
-<pre><code>## # A tibble: 3,726 × 2
-## # Groups:   cmmed [3,726]
-##    cmmed                                n
-##    &lt;chr&gt;                            &lt;int&gt;
-##  1 -4                                8937
-##  2 1 % Lidocaine                        1
-##  3 1% Cortizon Ointment                 1
-##  4 1% Hc, 2% Sulf/Amc Cream             1
-##  5 1/4 Adult Aspirin (Baby Aspirin)     1
-##  6 2 Pack Inhaler                       1
-##  7 24 Hr Allergy Relief                 1
-##  8 29 Essential Vitamins                2
-##  9 3% Hc/Sarna Lotion                   1
-## 10 5% Saline Eye Drops                  2
-## # ℹ 3,716 more rows</code></pre>
-<pre class="r"><code>medication%&gt;% 
-  group_by(CMREASON)%&gt;%
+<pre><code>## # A tibble: 4 × 2
+## # Groups:   medication_category [4]
+##   medication_category     n
+##   &lt;chr&gt;               &lt;int&gt;
+## 1 0                   21212
+## 2 1                    6860
+## 3 1|2                  3797
+## 4 2                    5193</code></pre>
+<pre class="r"><code>medication_keys &lt;- cl_med %&gt;% 
+  select(rid, phase, viscode) %&gt;% 
+  distinct()
+backmed_keys &lt;- backmed %&gt;% 
+  select(rid, phase, viscode) %&gt;% 
+  distinct()
+
+# Find the intersection of keys
+common_keys &lt;- intersect(medication_keys, backmed_keys)
+  
+# add keymeds from backmeds with medication table 
+medication_with_keymed &lt;- cl_med %&gt;%
+  full_join(backmed  %&gt;% 
+              select(rid, phase, viscode, keymed), 
+            by = c(&quot;rid&quot; = &quot;rid&quot;, &quot;phase&quot; = &quot;phase&quot;, &quot;viscode&quot; = &quot;viscode&quot;))%&gt;%
+            select(rid, phase, viscode, keymed,everything())
+
+# add medication category based on keymed
+cl_med_na &lt;- medication_with_keymed %&gt;%
+  filter(is.na(medication_category))%&gt;%
+  mutate(
+    keymed_codes = str_split(keymed, &quot;\\|&quot;),
+    # Assign medication_category based on keymed_codes
+    medication_category = case_when(
+      map_lgl(keymed_codes, ~ any(.x %in% c(&quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, &quot;5&quot;))) ~ 1,
+      map_lgl(keymed_codes, ~ any(.x == &quot;6&quot;)) ~ 2,
+      map_lgl(keymed_codes, ~ any(.x == &quot;7&quot;)) ~ 3, # assign other behavior medication to new category 3
+      TRUE ~ 0
+    )) %&gt;%
+  select(-keymed_codes)
+
+# Update medication_with_keymed to include new categories and resolve errors in type mismatch
+medication_with_keymed_updated &lt;- medication_with_keymed %&gt;%
+  left_join(
+    cl_med_na %&gt;%
+      select(rid, phase, viscode, cmmed, medication_category),
+    by = c(&quot;rid&quot;, &quot;phase&quot;, &quot;viscode&quot;, &quot;cmmed&quot;),
+    suffix = c(&quot;&quot;, &quot;_new&quot;)
+  ) %&gt;%
+  mutate(
+    # Convert both columns to character before using coalesce
+    medication_category = coalesce(as.character(medication_category_new), as.character(medication_category))
+  ) %&gt;%
+  select(-medication_category_new)
+
+# View the updated table
+medication_with_keymed_updated%&gt;%
+    group_by(medication_category) %&gt;%
   count()</code></pre>
 <pre><code>## # A tibble: 5 × 2
-## # Groups:   CMREASON [5]
-##   CMREASON     n
+## # Groups:   medication_category [5]
+##   medication_category     n
+##   &lt;chr&gt;               &lt;int&gt;
+## 1 0                   26097
+## 2 1                    8661
+## 3 1|2                  3797
+## 4 2                    6385
+## 5 3                     171</code></pre>
+<p>One issue here is that when keymed like 1|6, or 6|7, medication
+category only show one of them, but without further information on
+keymed, i can only fill out NA this way.</p>
+<pre class="r"><code># Add keymed with NA based on cmmed
+#1=Aricept;2=Cognex;3=Exelon;4=Namenda;5=Razadyne;
+#1-5: ad-drugs 6=Anti-depressant medication;7=Other behavioral medication;0=None of the above
+med_code_mapping &lt;- c(
+  &quot;Aricept&quot; = 1,
+  &quot;Cognex&quot; = 2,
+  &quot;Exelon&quot; = 3,
+  &quot;Namenda&quot; = 4,
+  &quot;Razadyne&quot; = 5)
+
+# Function to map medications to codes
+map_meds_to_codes &lt;- function(cmmed_list, med_category_list) {
+  codes_present &lt;- c()
+
+  cmmed_list_lower &lt;- tolower(cmmed_list)
+  
+  # Map medications with medication_category == 1
+  for (med in names(med_code_mapping)) {
+    med_lower &lt;- tolower(med)
+    
+    indices &lt;- which(str_detect(cmmed_list_lower, fixed(med_lower)))
+   
+    if (length(indices) &gt; 0 &amp;&amp; any(med_category_list[indices] == 1)) {
+      codes_present &lt;- c(codes_present, med_code_mapping[med])
+    }
+  }
+  
+  # Add &#39;6&#39; if any medication_category == 2
+  if (any(med_category_list == 2)) {
+    codes_present &lt;- c(codes_present, 6)
+  }
+  
+  # If no codes are present, add &#39;0&#39;
+  if (length(codes_present) == 0) {
+    codes_present &lt;- c(0)
+  }
+  
+  # Return the codes as a string separated by &#39;|&#39;, sorted and unique
+  return(paste(sort(unique(codes_present)), collapse = &quot;|&quot;))
+}
+
+visit_medication &lt;- medication_with_keymed_updated %&gt;%
+  group_by(rid, phase, viscode) %&gt;%
+  summarise(
+    cmmed_list = list(cmmed),
+    med_category_list = list(medication_category),
+    .groups = &#39;drop&#39;
+  ) %&gt;%
+  mutate(
+    keymed = pmap_chr(
+      list(cmmed_list, med_category_list),
+      map_meds_to_codes
+    )
+  ) %&gt;%
+  ungroup()%&gt;%
+  select(-cmmed_list, -med_category_list)
+
+medication_with_keymed_updated &lt;- medication_with_keymed_updated %&gt;%
+  left_join(visit_medication, by = c(&quot;rid&quot;, &quot;phase&quot;, &quot;viscode&quot;))
+
+
+medication_with_keymed_updated%&gt;%
+  group_by(keymed.y)%&gt;%
+  count()</code></pre>
+<pre><code>## # A tibble: 14 × 2
+## # Groups:   keymed.y [14]
+##    keymed.y     n
+##    &lt;chr&gt;    &lt;int&gt;
+##  1 0        32929
+##  2 1         2719
+##  3 1|3         38
+##  4 1|3|4        7
+##  5 1|4       1416
+##  6 1|4|5       12
+##  7 1|5          2
+##  8 3          413
+##  9 3|4        159
+## 10 3|5          4
+## 11 4          819
+## 12 4|5         82
+## 13 5          126
+## 14 6         6385</code></pre>
+<p>I’ve updated keymed based on the dictionary of keymed, one potential
+issue here is ad-drugs that doesn’t exist in the keymed dictionary will
+assign 0 to keymed if there are no other medications contributing to
+keymed.</p>
+<pre class="r"><code>#check exploratory data for medication with keymed
+medication_with_keymed%&gt;%
+  group_by(keymed)%&gt;%
+  count()</code></pre>
+<pre><code>## # A tibble: 47 × 2
+## # Groups:   keymed [47]
+##    keymed            n
+##    &lt;chr&gt;         &lt;int&gt;
+##  1 &quot;&quot;               35
+##  2 &quot;0&quot;           15274
+##  3 &quot;1&quot;            2267
+##  4 &quot;1|0&quot;             3
+##  5 &quot;1|2|3|4|5|6&quot;     1
+##  6 &quot;1|3&quot;            14
+##  7 &quot;1|3|4&quot;          21
+##  8 &quot;1|3|4|6&quot;        13
+##  9 &quot;1|3|6&quot;           4
+## 10 &quot;1|4&quot;          1297
+## # ℹ 37 more rows</code></pre>
+<pre class="r"><code>#Exploratory Data
+medication%&gt;% 
+  group_by(cmreason)%&gt;%
+  count()</code></pre>
+<pre><code>## # A tibble: 4 × 2
+## # Groups:   cmreason [4]
+##   cmreason     n
 ##      &lt;int&gt; &lt;int&gt;
-## 1       -4  3448
-## 2        1  5444
-## 3        2 26467
-## 4        3 15731
-## 5       NA 17320</code></pre>
+## 1        1  2704
+## 2        2 12928
+## 3        3  6828
+## 4       NA 14602</code></pre>
+<pre class="r"><code>medication%&gt;%
+  group_by(phase)%&gt;%
+  count()</code></pre>
+<pre><code>## # A tibble: 3 × 2
+## # Groups:   phase [3]
+##   phase      n
+##   &lt;chr&gt;  &lt;int&gt;
+## 1 ADNI1  14602
+## 2 ADNI2  17984
+## 3 ADNIGO  4476</code></pre>
+<pre class="r"><code>backmed%&gt;%
+  group_by(phase)%&gt;%
+  count()</code></pre>
+<pre><code>## # A tibble: 4 × 2
+## # Groups:   phase [4]
+##   phase      n
+##   &lt;chr&gt;  &lt;int&gt;
+## 1 ADNI2   7257
+## 2 ADNI3   3911
+## 3 ADNI4    557
+## 4 ADNIGO   956</code></pre>
+<pre class="r"><code>medication%&gt;%
+  filter(rid %in% c(6463,6535))</code></pre>
+<pre><code>##  [1] phase                ptid                 rid                 
+##  [4] viscode              viscode2             visdate             
+##  [7] recno                cmmed                cmmedid             
+## [10] cmunitsid            cmunits              cmfreqid            
+## [13] cmfreqnc             cmrouteid            cmroute             
+## [16] cmreason             cmevnum              cmbgn               
+## [19] cmbgnyr_drvd         cmcont               cmend               
+## [22] cmendyr_drvd         id                   siteid              
+## [25] userdate             userdate2            dd_crf_version_label
+## [28] language_code        update_stamp        
+## &lt;0 rows&gt; (or 0-length row.names)</code></pre>
+<pre class="r"><code>#metformin 
+metformin &lt;-cl_med_ghi%&gt;%
+  filter(str_detect(cmmed, regex(&quot;metformin|Glucophage&quot;, ignore_case = TRUE)))
+
+View(metformin)
+
+#check metformin rid with the article
+metformin_rid = c(339, 1408, 1423, 2063, 2072, 2193, 2263, 4077, 4432, 4653, 4675, 4689, 4765, 4803, 4919, 6463, 6535)
+
+metformin%&gt;%
+  filter(rid %in% metformin_rid)</code></pre>
+<pre><code>##     phase       ptid  rid viscode viscode2    visdate recno
+## 1   ADNI1 132_S_0339  339      sc       sc 2007-03-09     5
+## 2   ADNI1 128_S_1408 1408      sc       sc 2007-06-08     4
+## 3   ADNI1 041_S_1423 1423      sc       sc 2007-07-16     2
+## 4   ADNI1 128_S_1408 1408     m06      m06 2008-02-06    10
+## 5   ADNI1 128_S_1408 1408     m06      m06 2008-02-06    11
+## 6  ADNIGO 072_S_2072 2072      sc       sc 2010-08-26     3
+## 7  ADNIGO 099_S_2063 2063      sc       sc 2010-09-22     6
+## 8  ADNIGO 068_S_2193 2193      sc       sc 2010-11-05     4
+## 9  ADNIGO 022_S_2263 2263      sc       sc 2010-12-17     1
+## 10 ADNIGO 068_S_2193 2193     m06      m06 2011-07-25    22
+## 11  ADNI2 153_S_4077 4077     v01       sc 2011-06-07     6
+## 12  ADNI2 072_S_2072 2072     v06      m12 2011-09-21     3
+## 13  ADNI2 037_S_4432 4432     v01       sc 2012-01-25     1
+## 14  ADNI2 099_S_2063 2063     v06      m12 2011-10-31     5
+## 15  ADNI2 022_S_2263 2263     v06      m12 2012-02-24     1
+## 16  ADNI2 128_S_4653 4653     v01       sc 2012-03-29     6
+## 17  ADNI2 126_S_4675 4675     v01       sc 2012-04-10     6
+## 18  ADNI2 135_S_4689 4689     v01       sc 2012-04-20     6
+## 19  ADNI2 127_S_4765 4765     v01       sc 2012-05-24     3
+## 20  ADNI2 141_S_4803 4803     v01       sc 2012-06-11     1
+## 21  ADNI2 068_S_2193 2193     v06      m12 2012-05-07     7
+## 22  ADNI2 027_S_4919 4919     v01       sc 2012-08-23     2
+## 23  ADNI2 022_S_2263 2263     v07      m18 2012-08-17    10
+## 24  ADNI2 135_S_4689 4689     v11      m12 2013-05-17     9
+## 25  ADNI2 072_S_2072 2072     v21      m36 2013-09-17    23
+## 26  ADNI2 022_S_2263 2263     v21      m36 2014-02-07    14
+## 27  ADNI2 128_S_1408 1408     v41     m108 2016-07-19    39
+##                      cmmed cmmedid cmunitsid cmunits cmfreqid cmfreqnc
+## 1                Metformin      NA                NA                NA
+## 2                Metformin      NA                NA                NA
+## 3       Metformin Hcl Tabs      NA                NA                NA
+## 4                Metformin      NA                NA                NA
+## 5                Metformin      NA                NA                NA
+## 6                Metformin     904        -4      NA       -4       NA
+## 7                Metformin     904        -4      NA       -4       NA
+## 8                Metformin     904        mg      NA      bid       NA
+## 9  Metformin Hydrochloride      NA        mg      NA       qd       NA
+## 10               Metformin     904        mg      NA      bid       NA
+## 11               Metformin     904                 5                10
+## 12               Metformin     904                 5                10
+## 13               Metformin     904                 5                 1
+## 14               Metformin     904                 5                10
+## 15               Metformin     904                 5                10
+## 16               Metformin     904                 5                 1
+## 17               Metformin     904                 5                 2
+## 18               Metformin     904                 5                 2
+## 19               Metformin     904                 5                 1
+## 20               Metformin     904                 5                10
+## 21               Metformin     904                 5                 1
+## 22               Metformin     904                 5                 1
+## 23               Metformin     904                 5                10
+## 24               Metformin     904                 5                 1
+## 25               Metformin     904                 5                10
+## 26               Metformin     904                 5                 1
+## 27               Metformin     904                 5                10
+##    cmrouteid cmroute cmreason cmevnum      cmbgn cmbgnyr_drvd cmcont      cmend
+## 1                 NA       NA         --/--/2003         2003      1         -4
+## 2                 NA       NA         01/--/2007         2007      0 01/--/2008
+## 3                 NA       NA         --/--/2004         2004      1         -4
+## 4                 NA       NA         01/--/2008         2008      1         -4
+## 5                 NA       NA         01/--/2008         2008      1         -4
+## 6         -4      NA        2         --/--/1995         1995      1         -4
+## 7         po      NA        2         --/--/2004         2004      1         -4
+## 8         po      NA        2         --/--/2000         2000      0 06/--/2011
+## 9         po      NA        2         09/08/2010         2010      1         -4
+## 10        po      NA        1         06/--/2011         2011      1         -4
+## 11                 6        2      -4 --/--/2006         2006      1         -4
+## 12                 6        2      -4 --/--/1995         1995      0 08/13/2013
+## 13                 6        2      -4 --/--/2007         2007      1         -4
+## 14                 6        2      -4 --/--/2004         2004      1         -4
+## 15                 6        2      -4 09/08/2010         2010      0 02/29/2012
+## 16                 6        2      -4 01/11/2008         2008      0 04/03/2015
+## 17                 6        2      -4 --/--/1990         1990      1         -4
+## 18                 6        2      -4 --/--/1998         1998      0 08/21/2012
+## 19                 6        2      -4 --/--/1970         1970      1         -4
+## 20                 6        2      -4 --/--/2004         2004      1         -4
+## 21                 6        2      -4 04/--/2011         2011      1         -4
+## 22                 6        2      -4 09/--/2009         2009      1         -4
+## 23                 6        2      -4 03/01/2012         2012      0 09/30/2012
+## 24                 6        2      -4 08/22/2012         2012      1         -4
+## 25                 6        2      -4 08/13/2013         2013      1         -4
+## 26                 6        2      -4 12/11/2012         2012      1         -4
+## 27                 6        2      -4 07/--/2015         2015      1         -4
+##    cmendyr_drvd    id siteid   userdate  userdate2 dd_crf_version_label
+## 1            NA  4092    119 2006-03-17                                
+## 2          2008 21750    115 2007-06-29                                
+## 3            NA 22188     20 2007-07-27                                
+## 4            NA 25248    115 2008-02-07                                
+## 5            NA 25250    115 2008-02-07                                
+## 6            NA   854     34 2010-08-28 2010-09-07                     
+## 7            NA  1878     39 2010-10-08                                
+## 8          2011  2876     33 2010-11-08 2011-07-26                     
+## 9            NA  4082     16 2010-12-17                                
+## 10           NA  8076     33 2011-07-26 2011-07-26                     
+## 11           NA  1404     57 2011-06-09                                
+## 12         2013  6232     34 2011-10-11 2013-09-19                     
+## 13           NA 11874     26 2012-01-26                                
+## 14           NA 13004     39 2012-02-15                                
+## 15         2012 14088     16 2012-03-06 2012-09-06                     
+## 16         2015 15712     48 2012-03-29 2015-04-28                     
+## 17           NA 16302     46 2012-04-11                                
+## 18         2012 17064     60 2012-04-23 2013-05-20                     
+## 19           NA 18956     47 2012-05-29                                
+## 20           NA 19544     56 2012-06-12                                
+## 21           NA 19776     33 2012-06-15                                
+## 22           NA 22774     19 2012-08-28                                
+## 23         2012 23106     16 2012-09-06 2013-03-01                     
+## 24           NA 31698     60 2013-05-20                                
+## 25           NA 35962     34 2013-09-19                                
+## 26           NA 39238     16 2014-02-11                                
+## 27           NA 47914     48 2016-07-25                                
+##    language_code          update_stamp
+## 1                2006-03-17 00:00:00.0
+## 2                2007-06-29 00:00:00.0
+## 3                2007-07-27 00:00:00.0
+## 4                2008-02-07 00:00:00.0
+## 5                2008-02-07 00:00:00.0
+## 6                2013-03-25 17:07:29.0
+## 7                2013-03-25 17:07:29.0
+## 8                2013-03-25 17:07:30.0
+## 9                2013-03-25 17:07:30.0
+## 10               2013-03-25 17:07:32.0
+## 11               2013-03-25 17:06:58.0
+## 12               2013-09-19 19:19:40.0
+## 13               2013-03-25 17:07:02.0
+## 14               2013-03-25 17:07:03.0
+## 15               2012-11-16 12:28:03.0
+## 16               2015-04-28 19:20:40.0
+## 17               2013-03-25 17:07:04.0
+## 18               2013-05-20 19:19:33.0
+## 19               2013-03-25 17:07:06.0
+## 20               2013-03-25 17:07:06.0
+## 21               2013-03-25 17:07:06.0
+## 22               2013-03-25 17:07:07.0
+## 23               2013-03-01 19:19:36.0
+## 24               2013-05-20 19:19:40.0
+## 25               2013-09-19 19:19:50.0
+## 26               2014-02-11 19:20:18.0
+## 27               2016-07-25 19:55:20.0</code></pre>
+<pre class="r"><code># Install ADNIMERGE from the local source file
+#reccmeds&lt;-ADNIMERGE::reccmeds
+
+# check metformin from r package
+#reccmeds%&gt;%
+#  filter(RID %in% metformin_rid)
+
+na_keymed_rows &lt;- visit_medication %&gt;%
+  filter(is.na(keymed))</code></pre>
+<pre class="r"><code>matched_entries &lt;- metformin %&gt;%
+  inner_join(cl_adnimerge, by = &quot;ptid&quot;)%&gt;%
+  select(viscode.y, examdate, everything())</code></pre>
+<pre><code>## Warning in inner_join(., cl_adnimerge, by = &quot;ptid&quot;): Detected an unexpected many-to-many relationship between `x` and `y`.
+## ℹ Row 2 of `x` matches multiple rows in `y`.
+## ℹ Row 1933 of `y` matches multiple rows in `x`.
+## ℹ If a many-to-many relationship is expected, set `relationship =
+##   &quot;many-to-many&quot;` to silence this warning.</code></pre>
+<pre class="r"><code>matched_entries &lt;- matched_entries%&gt;%
+  group_by(ptid,viscode.y,examdate)
+
+
+View(matched_entries)</code></pre>
 
 
 
