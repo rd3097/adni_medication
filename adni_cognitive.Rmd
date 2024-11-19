@@ -116,8 +116,9 @@ filtered_longitudinal_data_clean <- filtered_longitudinal_data_clean %>%
   left_join(baseline_dates, by = "rid")
 
 filtered_longitudinal_data_clean <- filtered_longitudinal_data_clean %>%
-  mutate(time_since_baseline = round(as.numeric(difftime(examdate, baseline_examdate, units = "days")/365)))%>%
-  select(rid,viscode2,time_since_baseline,phase,examdate,everything())# time passed in month
+  mutate(time_since_baseline = round(as.numeric(difftime(examdate, baseline_examdate, units = "days") / 365), 2)) %>%
+  select(rid, viscode2, time_since_baseline, phase, examdate, everything())
+
 
 
 ```
@@ -149,11 +150,11 @@ mean_phc_data <- merged_longitudinal_data_no_na %>%
 
 # Plot the longitudinal model for each variable and combine using facets
 ggplot(mean_phc_data, aes(x = time_since_baseline, y = mean_value, color = as.factor(phc_diagnosis))) +
-  geom_point() +
-  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(alpha=0.3) +
+    geom_smooth(method = "lm", se = FALSE) +
   scale_color_manual(
     name = "Diagnosis",
-    values = c("1" = "green", "2" = "orange", "3" = "red"),
+    values = c("1" = "green", "2" = "blue", "3" = "red"),
     labels = c("1" = "Normal Cognition", "2" = "Mild Cognitive Impairment", "3" = "Alzheimer's Disease")
   ) +
   labs(
@@ -176,18 +177,18 @@ merged_longitudinal_data_no_na <- merged_longitudinal_data_no_na %>%
   ) %>%
   ungroup()
 
-# 6351 without apoe4 and 4 without ethinicity
+# 6351 without apoe4 and 4 without ethinicity, leave apoe4 for now 
 merged_longitudinal_data_no_na%>%
   group_by(apoe4)%>%
   count()
 
 merged_longitudinal_data_no_na_clean <- merged_longitudinal_data_no_na %>%
-  drop_na(apoe4,phc_ethnicity)
+  drop_na(phc_ethnicity)
 
 
 # Fit a linear mixed-effects model with random slope and random intercept with covariate:Phc_diagnosis +race +apoe4 from adnimerge + education + ethinicity + sex  +diagnosis by time interaction
 model_lme <- lme(
-  phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity +apoe4 + phc_education + phc_sex + age_baseline,
+  phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity  + phc_education + phc_sex + age_baseline,
   random = ~ 1 + time_since_baseline | rid, 
   data = merged_longitudinal_data_no_na_clean, 
   method = "REML")
@@ -218,13 +219,13 @@ plot_data <- data.frame(
 
 # Calculate the predicted values based on the intercept and slope
 plot_data$predicted_phc_mem <- intercept + slope * plot_data$time_since_baseline
-ggplot(plot_data, aes(x = time_since_baseline, y = predicted_phc_mem)) +
-  geom_point()+
-  geom_line(color = "blue", size = 1.2) +
-  labs(title = "Fixed Effects - Model Prediction",
+
+ggplot() + geom_point(data = mean_phc_data, aes(x = time_since_baseline, y = mean_value), size = 1.5, alpha = 0.7) + geom_line(data = plot_data, aes(x = time_since_baseline, y = predicted_phc_mem), color = "blue", size = 1.2) + labs(title = "Fixed Effects - Model Prediction",
        x = "Time Since Baseline (Years)",
        y = "Predicted PHC Memory Score") +
   theme_minimal()
+
+
 ```
 
 ```{r}
@@ -233,6 +234,7 @@ plot_data <- merged_longitudinal_data_no_na_clean %>%
   select(phc_diagnosis, phc_race, apoe4, phc_education, phc_sex, phc_ethnicity,age_baseline,time_since_baseline) %>%
   distinct() %>%
   mutate(
+    phc_diagnosis = ifelse(is.factor(phc_diagnosis),levels(phc_diagnosis)[1],phc_diagnosis),
     phc_race = ifelse(is.factor(phc_race), levels(phc_race)[1], phc_race),
     apoe4 = ifelse(is.factor(apoe4), levels(apoe4)[1], apoe4),
     phc_education = ifelse(is.factor(phc_education), levels(phc_education)[1], phc_education),
@@ -251,11 +253,17 @@ plot_data <- plot_data %>%
 
 
 ggplot(plot_data, aes(x = time_since_baseline, y = predicted_phc_mem, color = factor(phc_diagnosis))) +
-  geom_line(size = 1.2) +
-  labs(title = "Predicted PHC Memory Score Over Time by PHC Diagnosis Group",
+   geom_point(data = mean_phc_data, aes(x = time_since_baseline, y = mean_value), size = 1.5, alpha = 0.4) +
+    geom_line(size = 1.2) +
+  scale_color_manual(
+    name = "Diagnosis",
+    values = c("1" = "green", "2" = "blue", "3" = "red"),
+    labels = c("1" = "Normal Cognition", "2" = "Mild Cognitive Impairment", "3" = "Alzheimer's Disease")
+  ) +
+  labs(title = "Predicted Memory Score Over Time by Diagnosis Group",
        x = "Time Since Baseline (Years)",
-       y = "Predicted PHC Memory Score",
-       color = "PHC Diagnosis") +
+       y = "Memory Score",
+       color = " Diagnosis") +
   geom_text(aes(label = round(predicted_phc_mem, 1)), 
             vjust = -0.5, 
             size = 3, 
@@ -278,6 +286,7 @@ conversion_to_ad <- merged_longitudinal_data_no_na_clean %>%
 
 num_converted <- nrow(conversion_to_ad)
 
+# since keep apoe4 = empty, find out more patients from 1 to 3
 cat("Number of participants with baseline diagnosis 1 who converted to AD (diagnosis 3):", num_converted, "\n")
 
 converted_data <- merged_longitudinal_data_no_na_clean %>%
@@ -305,29 +314,36 @@ cross_sectional_data <- merged_longitudinal_data_no_na_clean %>%
   filter(time_since_baseline == 0)
 
 # Fit the linear model with all baseline covariates
-cross_sectional_model <- lm(phc_mem ~ phc_diagnosis + phc_race + apoe4 + phc_education + phc_sex + age_baseline+phc_ethnicity, 
+cross_sectional_model <- lm(phc_mem ~ phc_diagnosis + phc_race + phc_education + phc_sex + age_baseline+phc_ethnicity, 
                             data = cross_sectional_data)
 
 summary(cross_sectional_model)
 
-#prediction
-cross_sectional_data <- cross_sectional_data %>%
-  mutate(predicted_phc_mem = predict(cross_sectional_model, newdata = cross_sectional_data))
 
+# Smooth phc_mem using loess for the overall data
+smoothed_loess <- loess(phc_mem ~ age_baseline, data = cross_sectional_data, span = 0.5)
+cross_sectional_data$smoothed_phc_mem <- predict(smoothed_loess)
 
-# Plot actual data points and predicted regression lines by phc_diagnosis
-ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem ))+
-  geom_smooth(method = "loess", se = FALSE, size = 1.2) + 
-  labs(title = "Cross-Sectional Model: Predicted PHC Memory Score by Baseline Covariates",
+# Plot actual data points and the smoothed regression line
+ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem)) +
+  geom_point(alpha = 0.5) +
+  geom_line(aes(y = smoothed_phc_mem), color = "blue", size = 1.2) +
+  labs(title = "Cross-Sectional Model: Smoothed PHC Memory Score by Baseline Covariates",
        x = "Age at Baseline (Years)",
        y = "PHC Memory Score") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
+  theme_minimal()
 
-#by phc_Diagnosis
-ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem , color = factor(phc_diagnosis)))+
-  geom_smooth(method = "loess", se = FALSE, size = 1.2) + 
-  labs(title = "Cross-Sectional Model: Predicted PHC Memory Score by Baseline Covariates",
+# Smooth the data by phc_diagnosis group
+cross_sectional_data <- cross_sectional_data %>%
+  group_by(phc_diagnosis) %>%
+  mutate(smoothed_phc_mem = predict(loess(phc_mem ~ age_baseline, span = 0.5))) %>%
+  ungroup()
+
+# Plot smoothed regression lines by phc_diagnosis group
+ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem, color = factor(phc_diagnosis))) +
+  geom_point(alpha = 0.5) +
+  geom_line(aes(y = smoothed_phc_mem), size = 1.2) +
+  labs(title = "Cross-Sectional Model: Smoothed PHC Memory Score by Baseline Covariates",
        x = "Age at Baseline (Years)",
        y = "PHC Memory Score",
        color = "PHC Diagnosis") +
@@ -337,51 +353,40 @@ ggplot(cross_sectional_data, aes(x = age_baseline, y = phc_mem , color = factor(
 ```
 
 
-```{r}
-# Check mean and maximum value of age_baseline
-summary_stats <- filtered_longitudinal_data_clean_no_na %>%
-  summarise(
-    min_age_baseline = min(age_baseline),
-    mean_age_baseline = mean(age_baseline), 
-    max_age_baseline = max(age_baseline)  
-  )
 
-print(summary_stats)
-
-# Trend for age 55-65 and age 65-75
-new_data_age_55 <- filtered_longitudinal_data_clean_no_na[filtered_longitudinal_data_clean_no_na$age_baseline >= 55 & 
-                                                              filtered_longitudinal_data_clean_no_na$age_baseline <= 65, ]
-
-new_data_age_65 <- filtered_longitudinal_data_clean_no_na[filtered_longitudinal_data_clean_no_na$age_baseline >= 65 & 
-                                                              filtered_longitudinal_data_clean_no_na$age_baseline <= 75, ]
-
-# Generate predicted values for each dataset using the longitudinal model
-new_data_age_55$predicted_phc_mem <- predict(model_lme, newdata = new_data_age_55)
-new_data_age_65$predicted_phc_mem <- predict(model_lme, newdata = new_data_age_65)
-
-
-ggplot(filtered_longitudinal_data_clean_no_na, aes(x = time_since_baseline)) +
-    geom_line(data = new_data_age_65, aes(y = predicted_phc_mem, linetype = "Age 65-75"), color = "red", size = 1)+
-
-  geom_point(aes(y = phc_mem, color = as.factor(phc_diagnosis)), alpha = 0.5, size = 1.5) +
-
-  geom_line(data = new_data_age_55, aes(y = predicted_phc_mem, linetype = "Age 55-65"), color = "blue", size = 1) +
-  scale_color_manual(name = "PHC Diagnosis",
-                     values = c("1" = "green", "2" = "orange", "3" = "red"),
-                     labels = c("1" = "Normal cognition", "2" = "Mild cognitive impairment", "3" = "Alzheimer's disease")) +
-  scale_linetype_manual(name = "Baseline Age",
-                        values = c("Age 55-65" = "solid", "Age 65-75" = "dashed")) +
-  labs(title = "Longitudinal Trends of PHC_MEM for Different Baseline Ages",
-       x = "Time Since Baseline (Years)",
-       y = "PHC_MEM",
-       color = "PHC Diagnosis",
-       linetype = "Baseline Age") +
-  theme_minimal()
-```
 
 
 ```{r}
 # Model = baseline * cross-section + （visit age - baseline) * linear longitudinal
+coef_longitudinal <- fixef(model_lme)  # For mixed effects model, use fixef() to get fixed effects
+coef_cross_sectional <- coef(cross_sectional_model)
+
+age_data <-merged_longitudinal_data_no_na_clean%>%
+  select(time_since_baseline,phc_age_cognition)%>%
+  mutate(age_baseline = round(phc_age_cognition - time_since_baseline,1))%>%
+  mutate(predicted_phc_mem = coef_longitudinal['(Intercept)'] +
+                             coef_cross_sectional['(Intercept)'] +
+                             coef_cross_sectional['age_baseline'] * age_baseline +  # Cross-sectional effect of baseline age
+                             coef_longitudinal['time_since_baseline'] * time_since_baseline)  # Longitudinal effect over time
+
+# Fit a LOESS model to smooth the predicted values
+loess_fit <- loess(predicted_phc_mem ~ time_since_baseline, data = age_data, span = 0.5)
+
+# Add the smoothed values back to the data
+age_data$smoothed_phc_mem <- predict(loess_fit)
+
+# Plot the smoothed predicted values
+ggplot(age_data, aes(x = time_since_baseline)) +
+  # Plot observed data points
+  geom_point(data = merged_longitudinal_data_no_na_clean, aes(y = phc_mem), color = "red", alpha = 0.6, size = 2) +
+  # Plot smoothed predicted values as a line
+  geom_line(aes(y = smoothed_phc_mem), color = "blue", size = 1.2) +
+  labs(title = "Observed vs. LOESS Smoothed Predicted PHC Memory Scores",
+       x = "Time Since Baseline (Years)",
+       y = "PHC Memory Score") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
 ```
 
 
