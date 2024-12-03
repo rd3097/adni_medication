@@ -567,30 +567,31 @@ cognitive_marker <- read.csv("/Users/viv/adni_medication/ADSP_ADNI_Cognition_Dec
 cl_cognitive_marker <- cognitive_marker %>%
   janitor::clean_names()
 
-# Ensure that `medication_with_keymed_updated` is properly loaded before the join
 # Add keymed and medication category by joining with the medication dataset
 
+# add keymed and medication category
 cl_cognitive_marker <- cl_cognitive_marker %>%
   left_join(medication_with_keymed_updated %>% 
-              # Select relevant columns for the join
-              select(rid, viscode, phase, keymed, all_medications, medication_category, visdate),
-            by = c("rid", "viscode", "phase")) %>% 
-  # Reorder columns, making sure to keep all desired columns
-  select(rid, viscode, phase, keymed, all_medications, medication_category, examdate, visdate, everything())
+              select(rid, viscode2, phase, keymed.y,all_medications,medication_category,visdate),
+            by = c("rid", "viscode2", "phase"))%>%
+  select(rid, viscode2, phase, examdate, visdate,keymed.y, all_medications,medication_category,everything())
+
+
+cognitive_marker_distinct <- cl_cognitive_marker %>%
+  distinct(rid, viscode, phase, .keep_all = TRUE)
+cl_cognitive_marker%>%
+  group_by(medication_category)%>%
+  count()
 ```
 
 
 
 ```{r}
-# Remove duplicate entries based on 'rid', 'viscode', and 'phase'
-cognitive_marker_distinct <- cl_cognitive_marker %>%
-  distinct(rid, viscode, phase, .keep_all = TRUE)
+
 # Convert examdate and visdate columns to Date class
 cognitive_marker_date <- cognitive_marker_distinct %>%
   mutate(examdate = ymd(examdate),visdate = ymd(visdate))
 
-# Filter rows where the difference between examdate and visdate is more than one month
-cognitive_marker_filtered <- cognitive_marker_date %>%
-  filter(abs(interval(visdate, examdate) %/% months(1)) > 1)
+
 ```
 
