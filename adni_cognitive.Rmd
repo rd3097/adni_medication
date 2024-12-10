@@ -156,7 +156,7 @@ ggplot(mean_phc_data, aes(x = time_since_baseline, y = mean_value, color = as.fa
 merged_longitudinal_data_no_na <- merged_longitudinal_data_no_na %>%
   group_by(rid) %>%
   mutate(
-    age_baseline = phc_age_cognition[viscode2 == "bl"],   # Baseline age for each individual
+    age_baseline = phc_age_cognition[viscode2 == "bl"], 
   ) %>%
   drop_na(phc_ethnicity)%>%
   ungroup()
@@ -171,21 +171,27 @@ merged_longitudinal_data_no_na%>%
   group_by(medication_category)%>%
   count()
 
+merged_longitudinal_data_no_na <- merged_longitudinal_data_no_na %>%
+  mutate(
+    medication_category = ifelse(is.na(medication_category), 0, medication_category)
+  ) %>%
+  filter(!is.na(medication_category)) 
 #Convert categorical variables to factors and define their levels explicitly
 merged_longitudinal_data_no_na_clean <- merged_longitudinal_data_no_na %>%
   mutate(
     phc_diagnosis = factor(phc_diagnosis, levels = c(1, 2, 3)),
     phc_race = factor(phc_race, levels = unique(phc_race), exclude = NULL), 
    #education as continuous
+    medication_category= factor(medication_category, levels = unique(medication_category), exclude = NULL),
     phc_ethnicity = factor(phc_ethnicity, levels = unique(phc_ethnicity)),
     phc_sex = factor(phc_sex, levels = unique(phc_sex), exclude = NULL),
   )
 
-
 # Fit a linear mixed-effects model with random slope and random intercept with covariate:Phc_diagnosis +race +apoe4 from adnimerge + education + ethinicity + sex  +diagnosis by time interaction
 model_lme <- lme(
-  phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity + phc_education + phc_sex + age_baseline,
-  random = ~ time_since_baseline | rid,
+  phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity + 
+            phc_education + phc_sex + age_baseline + time_since_baseline *medication_category,
+random = ~ time_since_baseline | rid,  # Random effects for each subject
   data = merged_longitudinal_data_no_na_clean,
   method = "REML")
 
@@ -225,45 +231,25 @@ ggplot() + geom_point(data = mean_phc_data, aes(x = time_since_baseline, y = mea
 
 ```
 
-```{r}
-# check on variable medication_category
-missing_medication_category <- merged_longitudinal_data_no_na_clean %>%
-  filter(is.na(medication_category))
-
-missing_medication_category%>%
-  group_by(rid)%>%
-  count()%>%
-  arrange(desc(n))
-
-# Anti-join to find rows in cl_cognitive_marker that did not match in medication_with_keymed_updated
-unmatched_rows <- missing_medication_category %>%
-  select(rid, viscode2, phase) %>%
-  anti_join(medication_with_keymed_updated %>% select(rid, viscode2, phase),
-            by = c("rid", "viscode2", "phase"))
-
-# View the unmatched rows
-unmatched_rows
-
-```
-
 
 ```{r}
 plot_data <- merged_longitudinal_data_no_na_clean %>%
-  select(phc_diagnosis, phc_race, apoe4, phc_education, phc_sex, phc_ethnicity, age_baseline, time_since_baseline) %>%
+  select(phc_diagnosis, phc_race, apoe4, phc_education, phc_sex, phc_ethnicity, age_baseline, time_since_baseline,medication_category) %>%
   distinct() %>%
   group_by(phc_diagnosis) %>%  # Retain grouping by each diagnosis group
   mutate(
     # Set fixed values for categorical covariates
-    phc_race = ifelse(is.factor(phc_race), levels(phc_race)[1], phc_race),
-    apoe4 = ifelse(is.factor(apoe4), levels(apoe4)[1], apoe4),
-    phc_sex = ifelse(is.factor(phc_sex), levels(phc_sex)[1], phc_sex),
-    phc_ethnicity = ifelse(is.factor(phc_ethnicity), levels(phc_ethnicity)[1], phc_ethnicity),
-
+   phc_diagnosis = factor(phc_diagnosis, levels = levels(merged_longitudinal_data_no_na_clean$phc_diagnosis)),
+    phc_race = factor(phc_race, levels = levels(merged_longitudinal_data_no_na_clean$phc_race)),
+    phc_ethnicity = factor(phc_ethnicity, levels = levels(merged_longitudinal_data_no_na_clean$phc_ethnicity)),
+    phc_sex = factor(phc_sex, levels = levels(merged_longitudinal_data_no_na_clean$phc_sex)),
+    medication_category = factor(medication_category, levels = levels(medication_category)),
     # Set median value for continuous variables
     age_baseline = median(merged_longitudinal_data_no_na_clean$age_baseline, na.rm = TRUE),
     phc_education = median(merged_longitudinal_data_no_na_clean$phc_education, na.rm = TRUE)  
   ) %>%
   ungroup()
+```
 
 model_lme_refined <- lme(
   phc_mem ~ time_since_baseline * phc_diagnosis + phc_race + phc_ethnicity +
@@ -276,14 +262,14 @@ summary(model_lme_refined)
 
 anova(model_lme, model_lme_refined)
 
-
+```{r}
 # Predict values using the lme model for each level of phc_diagnosis
 plot_data <- plot_data %>%
-  mutate(predicted_phc_mem = predict(model_lme_refined, newdata = ., level = 0))
+  mutate(predicted_phc_mem = predict(model_lme, newdata = ., level = 0))
 
 # Plotting
 ggplot(plot_data, aes(x = time_since_baseline, y = predicted_phc_mem, color = as.factor(phc_diagnosis), group = phc_diagnosis)) +
-  geom_point(data = mean_phc_data, aes(x = time_since_baseline, y = mean_value, color = as.factor(phc_diagnosis)), size = 1.5, alpha = 0.4) +
+  geom_point(data = merged_longitudinal_data_no_na_clean, aes(x = time_since_baseline, y = phc_mem, color = as.factor(phc_diagnosis)), size = 1.5, alpha = 0.4) +
   geom_line(size = 1.2) +
   stat_summary(fun = mean, geom = "line", aes(group = phc_diagnosis), size = 1.5, linetype = "dashed") +
   scale_color_manual(
@@ -329,7 +315,8 @@ print(fixed_effects)
 # Extract intercept and slopes
 intercept <- fixed_effects["(Intercept)"] # Baseline intercept
 slope_time <- fixed_effects["time_since_baseline"] # Slope for time_since_baseline
-diagnosis_effects <- fixed_effects[grep("phc_diagnosis", names(fixed_effects))]
+diagnosis_effects <- fixed_effects[grep("phc_diagnosis", names(fixed_effects))] # Diagnosis intercept adjustments
+time_diagnosis_interactions <- fixed_effects[grep("time_since_baseline:phc_diagnosis", names(fixed_effects))] # Slope adjustments
 
 # Generate a sequence for time_since_baseline
 time_seq <- seq(0, 15, length.out = 100)
@@ -337,17 +324,20 @@ time_seq <- seq(0, 15, length.out = 100)
 # Compute trend lines for each diagnosis group
 trend_data <- data.frame(
   time_since_baseline = rep(time_seq, each = 3),
-  phc_diagnosis = factor(rep(1:3, times = length(time_seq))) # Assuming Diagnosis 1, 2, 3
-)
+  phc_diagnosis = factor(rep(1:3, times = length(time_seq))))
 
 # Add fixed effect predictions for each diagnosis group
 trend_data <- trend_data %>%
   mutate(
     intercept = intercept + 
-                ifelse(phc_diagnosis == 2, diagnosis_effects["phc_diagnosis2"], 0) +
-                ifelse(phc_diagnosis == 3, diagnosis_effects["phc_diagnosis3"], 0),
-    predicted_phc_mem = intercept + slope_time * time_since_baseline
+                ifelse(phc_diagnosis == "2", diagnosis_effects["phc_diagnosis2"], 0) +
+                ifelse(phc_diagnosis == "3", diagnosis_effects["phc_diagnosis3"], 0),
+    slope = slope_time + 
+            ifelse(phc_diagnosis == "2", time_diagnosis_interactions["time_since_baseline:phc_diagnosis2"], 0) +
+            ifelse(phc_diagnosis == "3", time_diagnosis_interactions["time_since_baseline:phc_diagnosis3"], 0),
+    predicted_phc_mem = intercept + slope * time_since_baseline
   )
+
 
 ggplot() +
   geom_point(data = merged_longitudinal_data_no_na_clean, 
@@ -365,6 +355,52 @@ ggplot() +
     title = "Predicted Memory Score Over Time by Diagnosis Group (Fixed Effects)",
     x = "Time Since Baseline (Years)",
     y = "Memory Score"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+VarCorr(model_lme)
+# Lme model with Subject level line
+random_effects <- data.frame(
+  rid = rownames(subject_coefficients),
+  random_intercept = subject_coefficients[, "(Intercept)"] - fixef(model_lme)["(Intercept)"],
+  random_slope = subject_coefficients[, "time_since_baseline"] - fixef(model_lme)["time_since_baseline"]
+)
+random_effects$rid <- as.integer(random_effects$rid)
+
+# Join random effects with the original data
+subject_data <- merged_longitudinal_data_no_na_clean %>%
+  left_join(random_effects, by = "rid") %>%
+  mutate(
+    subject_intercept = fixef(model_lme)["(Intercept)"] + random_intercept,
+    subject_slope = fixef(model_lme)["time_since_baseline"] + random_slope,
+    predicted_phc_mem_subject = subject_intercept + subject_slope * time_since_baseline
+  )
+
+# Plot subject-level lines
+ggplot() +
+  geom_point(data = merged_longitudinal_data_no_na_clean, 
+             aes(x = time_since_baseline, y = phc_mem, color = as.factor(phc_diagnosis)), 
+             alpha = 0.4) +
+  geom_line(data = subject_data, 
+            aes(x = time_since_baseline, y = predicted_phc_mem_subject, group = rid, color = as.factor(phc_diagnosis)), 
+            alpha = 0.4, size = 0.8) +  # Subject-level lines
+  geom_smooth(data = trend_data, 
+              aes(x = time_since_baseline, y = predicted_phc_mem, color = phc_diagnosis, group = phc_diagnosis), 
+              method = "lm", size = 1.2) +  # Fixed-effects lines
+  scale_color_manual(
+    name = "Diagnosis",
+    values = c("1" = "green", "2" = "blue", "3" = "red"),
+    labels = c("1" = "Normal Cognition", "2" = "Mild Cognitive Impairment", "3" = "Alzheimer's Disease")
+  ) +
+  labs(
+    title = "Predicted Memory Score Over Time by Diagnosis Group (Subject-Level Lines)",
+    x = "Time Since Baseline (Years)",
+    y = "Memory Score",
+    color = "Diagnosis"
   ) +
   theme_minimal() +
   theme(legend.position = "bottom")
